@@ -1,5 +1,6 @@
 package top.yogiczy.mytv.tv
 
+import android.app.ActivityManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -15,8 +16,20 @@ class BootReceiver : BroadcastReceiver() {
         if (Intent.ACTION_BOOT_COMPLETED == intent.action) {
             val sp = SP.getInstance(context)
             val bootLaunch = sp.getBoolean(Configs.KEY.APP_BOOT_LAUNCH.name, false)
+            val activityManager =
+                context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+            val alreadyForeground = activityManager
+                ?.runningAppProcesses
+                ?.any {
+                    it.processName == context.packageName &&
+                        (
+                            it.importance == ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND ||
+                                it.importance == ActivityManager.RunningAppProcessInfo.IMPORTANCE_VISIBLE ||
+                                it.importance == ActivityManager.RunningAppProcessInfo.IMPORTANCE_PERCEPTIBLE
+                            )
+                } == true
 
-            if (bootLaunch) {
+            if (bootLaunch && !alreadyForeground) {
                 context.startActivity(Intent(context, MainActivity::class.java).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 })
