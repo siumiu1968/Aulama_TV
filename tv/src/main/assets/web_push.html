@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <meta content="width=device-width, initial-scale=1" name="viewport">
+    <title>我的電視</title>
+    <link href="./web_push_css.css" rel="stylesheet" />
+    <script src="./web_push_js.js"></script>
+
+    <style>
+        .van-theme-dark body {
+            color: #f5f5f5;
+            background-color: black;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="min-h-100vh pt-46px pb-66px" id="app">
+        <van-config-provider :theme="isDark ? 'dark' : undefined">
+            <template v-if="info">
+                <div class="p-20px pt-0">
+                    <div class="ml-16px text-32px">{{ info.appTitle }}</div>
+                    <div class="ml-16px text-gray text-14px">{{ info.appRepo }}</div>
+                </div>
+
+                <template v-if="tabActive === 'config'">
+                    <van-cell-group inset title="直播源">
+                        <van-cell title="自定義直播源">
+                            <template #label>
+                                <van-space class="w-full" direction="vertical" size="small">
+                                    <span>支持m3u、txt格式</span>
+
+                                    <van-field label="類型" class="!pl-0" input-align="right">
+                                        <template #input>
+                                            <van-radio-group v-model="iptvSource.type" direction="horizontal">
+                                                <van-radio name="url">遠程</van-radio>
+                                                <van-radio name="file">文件</van-radio>
+                                                <van-radio name="content">靜態</van-radio>
+                                            </van-radio-group>
+                                        </template>
+                                    </van-field>
+
+                                    <van-field label="名稱" class="!pl-0" v-model="iptvSource.name" placeholder="直播源名稱"
+                                        input-align="right"></van-field>
+
+                                    <van-field v-if="iptvSource.type === 'url'" label="鏈接" class="!pl-0"
+                                        placeholder="直播源鏈接" v-model="iptvSource.url" type="textarea" rows="2"
+                                        input-align="right"></van-field>
+
+                                    <van-field v-else-if="iptvSource.type === 'file'" label="文件路徑" class="!pl-0"
+                                        placeholder="直播源文件路徑" v-model="iptvSource.filePath" type="textarea" rows="2"
+                                        input-align="right"></van-field>
+
+                                    <template v-else-if="iptvSource.type === 'content'">
+                                        <van-field label="內容" class="!pl-0" placeholder="直播源內容"
+                                            v-model="iptvSource.content" type="textarea" rows="5"
+                                            :input-align="iptvSource.content ? 'left' : 'right'"></van-field>
+
+                                        <van-field label="上傳" class="!pl-0" input-align="right">
+                                            <template #input>
+                                                <van-uploader :after-read="uploadIptvSourceContentAfterRead"
+                                                    accept=".txt,.m3u" />
+                                            </template>
+                                        </van-field>
+                                    </template>
+
+                                    <div class="flex justify-end">
+                                        <van-button @click="pushIptvSource" size="small" type="primary">
+                                            推送直播源
+                                        </van-button>
+                                    </div>
+                                </van-space>
+                            </template>
+                        </van-cell>
+                    </van-cell-group>
+
+                    <van-cell-group inset title="節目單">
+                        <van-cell title="自定義節目單">
+                            <template #label>
+                                <van-space class="w-full" direction="vertical" size="small">
+                                    <span>支持xml、xml.gz格式</span>
+
+                                    <van-field label="名稱" class="!pl-0" v-model="epgSource.name" placeholder="節目單名稱"
+                                        input-align="right"></van-field>
+
+                                    <van-field label="鏈接" class="!pl-0" placeholder="節目單鏈接" v-model="epgSource.url"
+                                        type="textarea" rows="2" input-align="right"></van-field>
+
+                                    <div class="flex justify-end">
+                                        <van-button @click="pushEpgSource" size="small" type="primary">
+                                            推送節目單
+                                        </van-button>
+                                    </div>
+                                </van-space>
+                            </template>
+                        </van-cell>
+                    </van-cell-group>
+
+                    <van-cell-group inset title="播放器">
+                        <van-cell title="自定義UA">
+                            <template #label>
+                                <van-space class="w-full" direction="vertical" size="small">
+                                    <van-field class="!p-0" placeholder="播放器自定義UA" v-model="videoPlayerUserAgent"
+                                        type="textarea" rows="2"></van-field>
+
+                                    <div class="flex justify-end">
+                                        <van-button @click="pushVideoPlayerUserAgent" size="small" type="primary">
+                                            推送
+                                        </van-button>
+                                    </div>
+                                </van-space>
+                            </template>
+                        </van-cell>
+                    </van-cell-group>
+
+                    <van-cell-group inset title="調試">
+                        <van-cell title="上傳apk">
+                            <template #extra>
+                                <van-uploader :after-read="uploadApkAfterRead" accept=".apk" />
+                            </template>
+                        </van-cell>
+                    </van-cell-group>
+                </template>
+
+                <template v-else-if="tabActive === 'log'">
+                    <van-list>
+                        <van-cell v-for="item in info.logHistory" :key="item.time" :label="item.cause">
+                            <template #title>
+                                <div class="flex flex-col gap-1">
+                                    <div class="flex gap-1 items-center">
+                                        <van-tag plain>{{ item.tag }}</van-tag>
+                                        <van-tag plain>{{ item.level }}</van-tag>
+                                    </div>
+                                    <span>{{ item.message }}</span>
+                                </div>
+                            </template>
+
+                            <template #extra>
+                                <span text="gray">{{ dayjs(item.time).format('HH:mm:ss') }}</span>
+                            </template>
+                        </van-cell>
+                    </van-list>
+                </template>
+
+                <van-tabbar v-model="tabActive">
+                    <van-tabbar-item name="config" icon="tv-o">配置</van-tabbar-item>
+                    <van-tabbar-item name="log" icon="list-switch">日誌</van-tabbar-item>
+                </van-tabbar>
+            </template>
+
+            <van-empty image="network" v-else />
+        </van-config-provider>
+    </div>
+
+    <script>
+        const { createApp, ref, onMounted, watch, nextTick } = Vue
+
+        // const baseUrl = "http://127.0.0.1:10481"
+        const baseUrl = ""
+
+        async function requestApi(url, config) {
+            const resp = await fetch(`${baseUrl}${url}`, config)
+            if (resp.status !== 200) {
+                throw new Error(`請求失敗：${resp.status}`)
+            }
+
+            return resp
+        }
+
+        dayjs.locale('zh-cn')
+        dayjs.extend(dayjs_plugin_relativeTime)
+
+        createApp({
+            setup() {
+                const isDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+
+                const tabActive = ref('config')
+
+                const info = ref()
+                async function refreshInfo() {
+                    try {
+                        vant.showLoadingToast({ message: '加載中...', forbidClick: true, duration: 0 })
+                        info.value = await (await requestApi('/api/info')).json()
+                        info.value.logHistory = info.value.logHistory.reverse()
+                        vant.closeToast()
+                    } catch (e) {
+                        vant.showFailToast('無法獲取信息')
+                        console.error(e)
+                    }
+                }
+
+                const iptvSource = ref({
+                    name: `添加於${dayjs().format('YYYY-MM-DD HH:mm:ss')}`,
+                    type: 'url',
+                    url: '',
+                    filePath: '',
+                    content: '',
+                })
+                async function pushIptvSource() {
+                    if (!iptvSource.value.name) {
+                        vant.showFailToast('請填寫直播源名稱')
+                        return
+                    }
+
+                    if (!iptvSource.value.type === 'url' && !iptvSource.value.url) {
+                        vant.showFailToast('請填寫直播源鏈接')
+                        return
+                    }
+
+                    if (iptvSource.value.type === 'file' && !iptvSource.value.filePath) {
+                        vant.showFailToast('請填寫直播源文件路徑')
+                        return
+                    }
+
+                    if (iptvSource.value.type === 'content' && !iptvSource.value.content) {
+                        vant.showFailToast('請填寫直播源內容')
+                        return
+                    }
+
+                    try {
+                        vant.showLoadingToast({ message: '加載中...', forbidClick: true, duration: 0 })
+                        await requestApi('/api/iptv-source/push', {
+                            method: "POST",
+                            body: JSON.stringify({ ...iptvSource.value }),
+                            headers: { 'Content-Type': 'application/json' }
+                        })
+                        vant.showSuccessToast("推送直播源成功")
+                    } catch (e) {
+                        vant.showFailToast('推送直播源失敗')
+                        console.error(e)
+                    }
+                }
+                async function uploadIptvSourceContentAfterRead(file) {
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        const content = e.target.result;
+                        iptvSource.value.content = content;
+                    };
+                    reader.readAsText(file.file);
+                }
+
+
+                const epgSource = ref({ name: `添加於${dayjs().format('YYYY-MM-DD HH:mm:ss')}`, url: '' })
+                async function pushEpgSource() {
+                    if (!epgSource.value.name) {
+                        vant.showFailToast('請填寫節目單名稱')
+                        return
+                    }
+
+                    if (!epgSource.value.url) {
+                        vant.showFailToast('請填寫節目單鏈接')
+                        return
+                    }
+
+                    try {
+                        vant.showLoadingToast({ message: '加載中...', forbidClick: true, duration: 0 })
+                        await requestApi('/api/epg-source/push', {
+                            method: "POST",
+                            body: JSON.stringify({ ...epgSource.value }),
+                            headers: { 'Content-Type': 'application/json' }
+                        })
+                        vant.showSuccessToast("推送節目單成功")
+                    } catch (e) {
+                        vant.showFailToast('推送節目單失敗')
+                        console.error(e)
+                    }
+                }
+
+                const videoPlayerUserAgent = ref('')
+                async function pushVideoPlayerUserAgent() {
+                    if (!videoPlayerUserAgent.value) {
+                        vant.showFailToast('請填寫播放器自定義UA')
+                        return
+                    }
+
+                    try {
+                        vant.showLoadingToast({ message: '加載中...', forbidClick: true, duration: 0 })
+                        await requestApi('/api/video-player-user-agent/push', {
+                            method: "POST",
+                            body: JSON.stringify({ ua: videoPlayerUserAgent.value }),
+                            headers: { 'Content-Type': 'application/json' }
+                        })
+                        vant.showSuccessToast("推送UA成功")
+                    } catch (e) {
+                        vant.showFailToast('推送UA失敗')
+                        console.error(e)
+                    }
+                }
+
+                async function uploadApkAfterRead(file) {
+                    try {
+                        vant.showLoadingToast({ message: '加載中...', forbidClick: true, duration: 0 })
+                        const formData = new FormData()
+                        formData.append('filename', file.file)
+                        await requestApi('/api/upload/apk', { method: "POST", body: formData })
+                        vant.closeToast()
+                    } catch (e) {
+                        vant.showFailToast('上傳apk失敗')
+                        console.error(e)
+                    }
+                }
+
+                onMounted(async () => {
+                    await refreshInfo()
+                })
+
+                return {
+                    dayjs,
+                    isDark,
+                    tabActive,
+                    info,
+                    iptvSource,
+                    pushIptvSource,
+                    uploadIptvSourceContentAfterRead,
+                    epgSource,
+                    pushEpgSource,
+                    videoPlayerUserAgent,
+                    pushVideoPlayerUserAgent,
+                    uploadApkAfterRead,
+                }
+            }
+        })
+            .use(vant)
+            .mount('#app')
+    </script>
+</body>
+
+</html>

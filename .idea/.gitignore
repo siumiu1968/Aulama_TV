@@ -1,0 +1,9 @@
+# 默认忽略的文件
+/shelf/
+<<<<<<< HEAD
+/workspace.xml
+./deploymentTargetSelector.xml
+/git_toolbox_blame.xml
+=======
+/workspace.xml
+>>>>>>> ee27a07f525f5a5f2b5114240b2ba6bfabe66f88

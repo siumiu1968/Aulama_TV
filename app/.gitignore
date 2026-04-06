@@ -1,6 +1,0 @@
-/build
-/release
-/cmake_install.cmake
-/CMakeFiles/
-/Makefile
-/src/main/cpp/native.c
