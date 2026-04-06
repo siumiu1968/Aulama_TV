@@ -1,0 +1,129 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+}
+
+android {
+    namespace 'com.lizongying.mytv'
+    compileSdk 34
+
+    viewBinding {
+        enabled = true
+    }
+
+    defaultConfig {
+        applicationId "top.yogiczy.mytv.tv.tc"
+        minSdk 21
+        targetSdk 33
+        versionCode VersionCode()
+        versionName VersionName()
+
+        // This block is different from the one you use to link Gradle
+        // to your CMake or ndk-build script.
+        externalNativeBuild {
+
+            // For ndk-build, instead use the ndkBuild block.
+            cmake {
+                arguments "-DIS_SO_BUILD=${project.hasProperty('IS_SO_BUILD') ? project.IS_SO_BUILD : true}"
+
+                abiFilters "armeabi-v7a", "arm64-v8a"
+            }
+        }
+
+        // Similar to other properties in the defaultConfig block,
+        // you can configure the ndk block for each product flavor
+        // in your build configuration.
+        ndk {
+            // Specifies the ABI configurations of your native
+            // libraries Gradle should build and package with your app.
+            abiFilters "armeabi-v7a", "arm64-v8a"
+        }
+        multiDexEnabled true
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = 17
+    }
+
+    // Encapsulates your external native build configurations.
+    externalNativeBuild {
+
+        // Encapsulates your CMake build configurations.
+        cmake {
+
+            // Provides a relative path to your CMake build script.
+            path = file("CMakeLists.txt")
+        }
+    }
+}
+
+static def VersionCode() {
+    try {
+        def p = "git describe --tags --always"
+        def process = p.execute()
+        process.waitFor()
+        def replace = [v: "", ".": " ", "-": " "]
+        def arr = (process.text.trim().replace(replace) + " 0").split(" ")
+        def versionCode = arr[0].toInteger() * 16777216 + arr[1].toInteger() * 65536 + arr[2].toInteger() * 256 + arr[3].toInteger()
+        println("VersionCode $versionCode")
+        return versionCode
+    } catch (ignored) {
+        return 230901
+    }
+}
+
+static def VersionName() {
+    try {
+        def process = "git describe --tags --always".execute()
+        process.waitFor()
+        return process.text.trim() - "v"
+    } catch (ignored) {
+        return "2.3.9-tc1"
+    }
+}
+
+dependencies {
+    def media3_version = "1.3.1"
+
+    implementation "androidx.media3:media3-ui:$media3_version"
+
+    // For media playback using ExoPlayer
+    implementation "androidx.media3:media3-exoplayer:$media3_version"
+
+    // For HLS playback support with ExoPlayer
+    implementation "androidx.media3:media3-exoplayer-hls:$media3_version"
+
+    // 21:2.11.0 17:2.6.4
+    def retrofit2_version = "2.11.0"
+
+    implementation 'com.google.protobuf:protobuf-kotlin:3.25.1'
+    implementation "com.squareup.retrofit2:converter-gson:$retrofit2_version"
+    implementation "com.squareup.retrofit2:converter-protobuf:$retrofit2_version"
+    implementation "com.squareup.retrofit2:retrofit:$retrofit2_version"
+
+    implementation 'androidx.leanback:leanback:1.2.0-alpha04'
+    
+    implementation 'com.github.bumptech.glide:glide:4.11.0'
+
+    implementation 'androidx.core:core-ktx:1.13.0'
+    implementation "androidx.lifecycle:lifecycle-runtime-ktx:2.7.0"
+
+    implementation "org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.2"
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.0-RC")
+
+    implementation 'com.google.android.exoplayer:exoplayer-ui:2.13.3'
+    implementation 'com.google.android.exoplayer:exoplayer-core:2.13.3'
+    implementation 'com.google.android.exoplayer:exoplayer-hls:2.13.3'
+}

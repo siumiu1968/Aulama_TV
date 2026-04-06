@@ -1,0 +1,10 @@
+<resources>
+    <string name="app_name">我的電視</string>
+    <string name="title_channel_reversal">換台方向反轉</string>
+    <string name="title_channel_num">換台時顯示頻道號</string>
+    <string name="check_version">檢查更新</string>
+    <string name="title_boot_startup">開機自啟</string>
+    <string name="dismiss_error">知道了</string>
+    <string name="title_time">顯示時間</string>
+    <string name="exit">結束應用程式</string>
+</resources>
