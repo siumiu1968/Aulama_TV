@@ -3,6 +3,8 @@ package top.yogiczy.mytv.tv.ui.screens.settings.components
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Circle
@@ -20,6 +22,9 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.Icon
 import androidx.tv.material3.ListItem
+import androidx.tv.material3.ListItemDefaults
+import androidx.tv.material3.MaterialTheme
+import androidx.tv.material3.Border
 import androidx.tv.material3.Text
 import top.yogiczy.mytv.tv.ui.material.LocalPopupManager
 import top.yogiczy.mytv.tv.ui.material.SimplePopup
@@ -46,6 +51,21 @@ fun SettingsListItem(
     ListItem(
         selected = false,
         onClick = {},
+        shape = ListItemDefaults.shape(shape = RoundedCornerShape(14.dp)),
+        colors = ListItemDefaults.colors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f),
+            focusedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+            focusedContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+            pressedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+            pressedContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        ),
+        scale = ListItemDefaults.scale(focusedScale = 1.018f),
+        border = ListItemDefaults.border(
+            focusedBorder = Border(
+                border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary),
+                shape = RoundedCornerShape(14.dp),
+            ),
+        ),
         headlineContent = { Text(text = headlineContent) },
         trailingContent = {
             Row(

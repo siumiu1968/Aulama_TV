@@ -42,11 +42,9 @@ fun SettingsCategoryList(
     currentCategoryProvider: () -> SettingsCategories = { SettingsCategories.entries.first() },
     onCategorySelected: (SettingsCategories) -> Unit = {},
 ) {
-    val childPadding = rememberChildPadding()
-
     LazyColumn(
-        contentPadding = PaddingValues(top = childPadding.top, bottom = childPadding.bottom),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+        contentPadding = PaddingValues(vertical = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
         modifier = modifier.ifElse(
             LocalSettings.current.uiFocusOptimize,
             Modifier.saveFocusRestorer(),
@@ -79,9 +77,26 @@ private fun SettingsCategoryItem(
     var isFocused by remember { mutableStateOf(false) }
 
     ListItem(
+        shape = ListItemDefaults.shape(
+            shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
+        ),
         colors = ListItemDefaults.colors(
-            selectedContainerColor = MaterialTheme.colorScheme.inverseSurface.copy(0.1f),
-            selectedContentColor = MaterialTheme.colorScheme.onSurface,
+            containerColor = androidx.compose.ui.graphics.Color.Transparent,
+            focusedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+            focusedContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+            selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.42f),
+            selectedContentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+            focusedSelectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+            focusedSelectedContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        ),
+        scale = ListItemDefaults.scale(focusedScale = 1.025f),
+        border = ListItemDefaults.border(
+            focusedBorder = androidx.tv.material3.Border(
+                androidx.compose.foundation.BorderStroke(
+                    2.dp,
+                    MaterialTheme.colorScheme.primary,
+                )
+            ),
         ),
         selected = isSelectedProvider(),
         onClick = { },

@@ -271,9 +271,11 @@ fun Modifier.captureBackKey(onBackPressed: () -> Unit) = this.onPreviewKeyEvent 
 fun Modifier.customBackground() = background(
     brush = Brush.linearGradient(
         colors = listOf(
-            Color(0xFF141E30),
-            Color(0xFF243B55),
-            Color(0xFF141E30)
+            Color(0xFF07090C),
+            Color(0xFF101B22),
+            Color(0xFF18201F),
+            Color(0xFF24130F),
+            Color(0xFF07090C),
         ),
     )
 )

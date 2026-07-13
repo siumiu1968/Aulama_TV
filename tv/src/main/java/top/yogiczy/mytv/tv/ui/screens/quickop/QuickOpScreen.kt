@@ -1,8 +1,8 @@
 package top.yogiczy.mytv.tv.ui.screens.quickop
 
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -14,11 +14,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.SyncAlt
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -26,17 +26,17 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.tv.material3.ClickableSurfaceDefaults
+import androidx.tv.material3.Border
 import androidx.tv.material3.Icon
 import androidx.tv.material3.LocalTextStyle
 import androidx.tv.material3.MaterialTheme
@@ -63,6 +63,7 @@ import top.yogiczy.mytv.tv.ui.screens.quickop.components.QuickOpBtnList
 import top.yogiczy.mytv.tv.ui.screens.settings.SettingsViewModel
 import top.yogiczy.mytv.tv.ui.screens.videoplayer.player.VideoPlayer
 import top.yogiczy.mytv.tv.ui.theme.MyTVTheme
+import top.yogiczy.mytv.tv.ui.theme.colors
 import top.yogiczy.mytv.tv.ui.tooling.PreviewWithLayoutGrids
 import top.yogiczy.mytv.tv.ui.utils.captureBackKey
 import top.yogiczy.mytv.tv.ui.utils.handleKeyEvents
@@ -93,7 +94,15 @@ fun QuickOpScreen(
             .captureBackKey { onClose() }
             .pointerInput(Unit) { detectTapGestures { onClose() } }
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background.copy(alpha = 0.5f)),
+            .background(
+                Brush.verticalGradient(
+                    listOf(
+                        Color.Black.copy(alpha = 0.2f),
+                        Color.Black.copy(alpha = 0.52f),
+                        Color.Black.copy(alpha = 0.9f),
+                    ),
+                ),
+            ),
     ) {
         QuickOpScreenTop(
             channelNumberProvider = {
@@ -141,6 +150,17 @@ private fun QuickOpScreenTop(
         }
 
         Row(
+            modifier = Modifier
+                .background(
+                    MaterialTheme.colors.surfaceContainerLow.copy(alpha = 0.88f),
+                    RoundedCornerShape(18.dp),
+                )
+                .border(
+                    1.dp,
+                    MaterialTheme.colorScheme.borderVariant.copy(alpha = 0.72f),
+                    RoundedCornerShape(18.dp),
+                )
+                .padding(horizontal = 16.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             ChannelNumber(channelNumberProvider = channelNumberProvider)
@@ -148,8 +168,8 @@ private fun QuickOpScreenTop(
             Box(modifier = Modifier.padding(horizontal = 8.dp)) {
                 Spacer(
                     modifier = Modifier
-                        .background(Color.White)
-                        .width(2.dp)
+                        .background(MaterialTheme.colorScheme.borderVariant)
+                        .width(1.dp)
                         .height(30.dp),
                 )
             }
@@ -173,17 +193,7 @@ fun QuickOpScreeIptvSource(
     val popupManager = LocalPopupManager.current
     val focusRequester = remember { FocusRequester() }
 
-    val alpha = remember { Animatable(1f) }
-    LaunchedEffect(isFocused) {
-        if (isFocused) {
-            while (true) {
-                alpha.animateTo(0.2f, tween(durationMillis = 1000))
-                alpha.animateTo(1f, tween(durationMillis = 1000))
-            }
-        } else {
-            alpha.animateTo(1f)
-        }
-    }
+    val sourceShape = RoundedCornerShape(14.dp)
 
     Surface(
         modifier = modifier
@@ -194,25 +204,33 @@ fun QuickOpScreeIptvSource(
                     popupManager.push(focusRequester, true)
                     isIptvSourceScreenVisible = true
                 },
-            )
-            .alpha(alpha.value),
+            ),
         colors = ClickableSurfaceDefaults.colors(
-            containerColor = Color.Transparent,
-            focusedContainerColor = Color.Transparent,
+            containerColor = MaterialTheme.colors.surfaceContainerLow.copy(alpha = 0.88f),
+            contentColor = MaterialTheme.colorScheme.onSurface,
+            focusedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+            focusedContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
         ),
-        scale = ClickableSurfaceDefaults.scale(focusedScale = 1f),
-        shape = ClickableSurfaceDefaults.shape(RectangleShape),
+        scale = ClickableSurfaceDefaults.scale(focusedScale = 1.04f),
+        shape = ClickableSurfaceDefaults.shape(sourceShape),
+        border = ClickableSurfaceDefaults.border(
+            focusedBorder = Border(
+                border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary),
+                shape = sourceShape,
+            ),
+        ),
         onClick = {
             popupManager.push(focusRequester, true)
             isIptvSourceScreenVisible = true
         },
     ) {
         Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            Icon(Icons.Default.SyncAlt, contentDescription = null)
             Text(currentIptvSource.name)
-            if (isFocused) Icon(Icons.Default.SyncAlt, contentDescription = null)
         }
     }
 
@@ -271,7 +289,19 @@ private fun QuickOpScreenBottom(
             verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {
             ChannelInfo(
-                modifier = Modifier.padding(start = childPadding.start, end = childPadding.end),
+                modifier = Modifier
+                    .padding(start = childPadding.start, end = childPadding.end)
+                    .fillMaxWidth(0.68f)
+                    .background(
+                        MaterialTheme.colors.surfaceContainerLow.copy(alpha = 0.88f),
+                        RoundedCornerShape(18.dp),
+                    )
+                    .border(
+                        1.dp,
+                        MaterialTheme.colorScheme.borderVariant.copy(alpha = 0.68f),
+                        RoundedCornerShape(18.dp),
+                    )
+                    .padding(horizontal = 20.dp, vertical = 14.dp),
                 channelProvider = currentChannelProvider,
                 channelUrlIdxProvider = currentChannelUrlIdxProvider,
                 recentEpgProgrammeProvider = {

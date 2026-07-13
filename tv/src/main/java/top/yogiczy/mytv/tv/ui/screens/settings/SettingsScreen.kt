@@ -1,12 +1,16 @@
 package top.yogiczy.mytv.tv.ui.screens.settings
 
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -16,12 +20,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.Brush
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.tv.material3.MaterialTheme
 import kotlinx.coroutines.delay
 import top.yogiczy.mytv.core.data.entities.channel.ChannelGroupList
 import top.yogiczy.mytv.tv.ui.rememberChildPadding
 import top.yogiczy.mytv.tv.ui.screens.settings.components.SettingsCategoryContent
 import top.yogiczy.mytv.tv.ui.screens.settings.components.SettingsCategoryList
+import top.yogiczy.mytv.tv.ui.theme.colors
 import top.yogiczy.mytv.tv.ui.utils.captureBackKey
 import top.yogiczy.mytv.tv.ui.utils.customBackground
 
@@ -48,21 +55,66 @@ fun SettingsScreen(
             .pointerInput(Unit) { detectTapGestures { } }
             .fillMaxSize()
             .customBackground()
-            .padding(start = childPadding.start, end = childPadding.end),
+            .padding(
+                start = childPadding.start,
+                top = childPadding.top,
+                end = childPadding.end,
+                bottom = childPadding.bottom,
+            ),
     ) {
         Row(
-            horizontalArrangement = Arrangement.spacedBy(52.dp),
+            modifier = Modifier.fillMaxSize(),
+            horizontalArrangement = Arrangement.spacedBy(20.dp),
         ) {
-            SettingsCategoryList(
-                modifier = Modifier.width(216.dp),
-                currentCategoryProvider = { currentCategory },
-                onCategorySelected = { currentCategory = it },
-            )
+            val panelShape = RoundedCornerShape(22.dp)
+            Box(
+                modifier = Modifier
+                    .width(228.dp)
+                    .fillMaxHeight()
+                    .background(
+                        brush = Brush.verticalGradient(
+                            listOf(
+                                MaterialTheme.colors.surfaceContainerHigh.copy(alpha = 0.96f),
+                                MaterialTheme.colors.surfaceContainerLow.copy(alpha = 0.96f),
+                            )
+                        ),
+                        shape = panelShape,
+                    )
+                    .border(
+                        1.dp,
+                        MaterialTheme.colorScheme.borderVariant.copy(alpha = 0.65f),
+                        panelShape,
+                    )
+                    .padding(10.dp),
+            ) {
+                SettingsCategoryList(
+                    modifier = Modifier.fillMaxSize(),
+                    currentCategoryProvider = { currentCategory },
+                    onCategorySelected = { currentCategory = it },
+                )
+            }
 
-            SettingsCategoryContent(
-                currentCategoryProvider = { currentCategory },
-                channelGroupListProvider = channelGroupListProvider,
-            )
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .background(
+                        MaterialTheme.colors.surfaceContainerLow.copy(alpha = 0.94f),
+                        panelShape,
+                    )
+                    .border(
+                        1.dp,
+                        MaterialTheme.colorScheme.borderVariant.copy(alpha = 0.55f),
+                        panelShape,
+                    )
+                    .padding(horizontal = 28.dp, vertical = 22.dp),
+            ) {
+                SettingsCategoryContent(
+                    modifier = Modifier.fillMaxSize(),
+                    currentCategoryProvider = { currentCategory },
+                    channelGroupListProvider = channelGroupListProvider,
+                )
+            }
         }
     }
 }

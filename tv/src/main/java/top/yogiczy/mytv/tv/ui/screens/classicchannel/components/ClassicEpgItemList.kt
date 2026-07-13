@@ -21,6 +21,7 @@ import top.yogiczy.mytv.core.data.entities.epg.EpgProgrammeList
 import top.yogiczy.mytv.core.data.entities.epg.EpgProgrammeReserveList
 import top.yogiczy.mytv.tv.ui.screens.epg.components.EpgDayItemList
 import top.yogiczy.mytv.tv.ui.screens.epg.components.EpgProgrammeItemList
+import top.yogiczy.mytv.tv.ui.theme.colors
 import java.text.SimpleDateFormat
 import java.util.Locale
 
@@ -44,8 +45,8 @@ fun ClassicEpgItemList(
     Row(
         modifier = modifier
             .fillMaxHeight()
-            .background(MaterialTheme.colorScheme.surface.copy(0.7f))
-            .padding(start = 12.dp, end = 12.dp),
+            .background(MaterialTheme.colors.surfaceContainerHigh.copy(alpha = 0.96f))
+            .padding(horizontal = 14.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         EpgProgrammeItemList(

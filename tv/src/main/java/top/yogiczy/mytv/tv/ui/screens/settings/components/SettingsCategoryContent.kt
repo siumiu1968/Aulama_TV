@@ -2,6 +2,7 @@ package top.yogiczy.mytv.tv.ui.screens.settings.components
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -9,7 +10,6 @@ import androidx.compose.ui.unit.dp
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import top.yogiczy.mytv.core.data.entities.channel.ChannelGroupList
-import top.yogiczy.mytv.tv.ui.rememberChildPadding
 import top.yogiczy.mytv.tv.ui.screens.settings.SettingsCategories
 
 @Composable
@@ -18,14 +18,17 @@ fun SettingsCategoryContent(
     currentCategoryProvider: () -> SettingsCategories = { SettingsCategories.entries.first() },
     channelGroupListProvider: () -> ChannelGroupList = { ChannelGroupList() },
 ) {
-    val childPadding = rememberChildPadding()
     val currentCategory = currentCategoryProvider()
 
     Column(
-        modifier = modifier.padding(top = childPadding.top),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        modifier = modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
-        Text(text = currentCategory.title, style = MaterialTheme.typography.headlineSmall)
+        Text(
+            text = currentCategory.title,
+            style = MaterialTheme.typography.headlineSmall,
+            color = MaterialTheme.colorScheme.primary,
+        )
 
         when (currentCategory) {
             SettingsCategories.ABOUT -> SettingsCategoryAbout()

@@ -18,7 +18,10 @@ object Constants {
     /**
      * 應用 代碼倉庫
      */
-    const val APP_REPO = "https://github.com/minyoad/mytv-android"
+    const val APP_REPO = "https://github.com/siumiu1968/mytv-tv-origpatch"
+
+    const val DEFAULT_IPTV_SOURCE_URL =
+        "https://gist.githubusercontent.com/siumiu1968/b6f1358a2504d228636149de4ca8d5e0/raw/hk_channels_merged_v2.m3u"
 
     /**
      * GitHub加速代理地址
@@ -34,7 +37,7 @@ object Constants {
         listOf(
             IptvSource(
                 name = "香港台精選（預設）",
-                url = "https://gist.githubusercontent.com/siumiu1968/b6f1358a2504d228636149de4ca8d5e0/raw/a66692b51dc3ab65003c44b13da245252eba632a/hk_channels_merged_v2.m3u"
+                url = DEFAULT_IPTV_SOURCE_URL,
             ),
             IptvSource(
                 name = "默認直播源 fanmingming（IPV6）",
@@ -100,8 +103,8 @@ object Constants {
      * Git最新版本信息
      */
     val GIT_RELEASE_LATEST_URL = mapOf(
-        "stable" to GITHUB_PROXY+"https://raw.githubusercontent.com/minyoad/mytv-android-update/main/tv-stable.json",
-        "beta" to GITHUB_PROXY+"https://raw.githubusercontent.com/minyoad/mytv-android-update/main/tv-beta.json",
+        "stable" to "https://api.github.com/repos/siumiu1968/mytv-tv-origpatch/releases/latest",
+        "beta" to "https://api.github.com/repos/siumiu1968/mytv-tv-origpatch/releases?per_page=20",
     )
 
     /**

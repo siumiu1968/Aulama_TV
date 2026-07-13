@@ -202,8 +202,21 @@ object Configs {
 
     /** 當前直播源 */
     var iptvSourceCurrent: IptvSource
-        get() = Json.decodeFromString(SP.getString(KEY.IPTV_SOURCE_CURRENT.name, "")
-            .ifBlank { Json.encodeToString(Constants.IPTV_SOURCE_LIST.first()) })
+        get() {
+            val source = Json.decodeFromString<IptvSource>(
+                SP.getString(KEY.IPTV_SOURCE_CURRENT.name, "")
+                    .ifBlank { Json.encodeToString(Constants.IPTV_SOURCE_LIST.first()) }
+            )
+            val isLegacyHongKongSource = source.name == "香港台精選（預設）" &&
+                source.url.contains("gist.githubusercontent.com/siumiu1968/b6f1358a2504d228636149de4ca8d5e0/raw/")
+            return if (isLegacyHongKongSource && source.url != Constants.DEFAULT_IPTV_SOURCE_URL) {
+                source.copy(url = Constants.DEFAULT_IPTV_SOURCE_URL).also { migrated ->
+                    SP.putString(KEY.IPTV_SOURCE_CURRENT.name, Json.encodeToString(migrated))
+                }
+            } else {
+                source
+            }
+        }
         set(value) = SP.putString(KEY.IPTV_SOURCE_CURRENT.name, Json.encodeToString(value))
 
     /** 直播源列表 */

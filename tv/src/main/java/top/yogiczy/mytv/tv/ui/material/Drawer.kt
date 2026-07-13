@@ -1,6 +1,7 @@
 package top.yogiczy.mytv.tv.ui.material
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,6 +13,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -50,18 +52,30 @@ fun Drawer(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .padding(24.dp)
+            .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.58f))
+            .padding(28.dp)
             .pointerInput(Unit) { detectTapGestures { onDismissRequest?.invoke() } },
     ) {
+        val drawerShape = MaterialTheme.shapes.large
         Box(
             modifier = Modifier
                 .align(alignment)
                 .then(positionModifier)
                 .background(
-                    MaterialTheme.colors.surfaceContainer,
-                    MaterialTheme.shapes.large,
+                    brush = Brush.linearGradient(
+                        colors = listOf(
+                            MaterialTheme.colors.surfaceContainerHigh.copy(alpha = 0.98f),
+                            MaterialTheme.colors.surfaceContainer.copy(alpha = 0.98f),
+                        ),
+                    ),
+                    shape = drawerShape,
                 )
-                .padding(20.dp)
+                .border(
+                    width = 1.dp,
+                    color = MaterialTheme.colorScheme.borderVariant.copy(alpha = 0.7f),
+                    shape = drawerShape,
+                )
+                .padding(22.dp)
         ) {
             Column {
                 header?.let { nnHeader ->
@@ -70,10 +84,10 @@ fun Drawer(
                     ) {
                         Box(
                             modifier = Modifier.padding(
-                                top = 8.dp,
-                                bottom = 16.dp,
-                                start = 16.dp,
-                                end = 16.dp
+                                top = 6.dp,
+                                bottom = 18.dp,
+                                start = 14.dp,
+                                end = 14.dp
                             )
                         ) {
                             nnHeader()

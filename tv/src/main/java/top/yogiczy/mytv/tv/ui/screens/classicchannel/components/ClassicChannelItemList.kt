@@ -1,6 +1,7 @@
 package top.yogiczy.mytv.tv.ui.screens.classicchannel.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -15,6 +16,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -39,6 +41,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.DenseListItem
+import androidx.tv.material3.Border
 import androidx.tv.material3.ListItemDefaults
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
@@ -55,6 +58,7 @@ import top.yogiczy.mytv.tv.ui.material.rememberDebounceState
 import top.yogiczy.mytv.tv.ui.screens.channel.components.ChannelItemLogo
 import top.yogiczy.mytv.tv.ui.screens.settings.LocalSettings
 import top.yogiczy.mytv.tv.ui.theme.MyTVTheme
+import top.yogiczy.mytv.tv.ui.theme.colors
 import top.yogiczy.mytv.tv.ui.utils.handleKeyEvents
 import top.yogiczy.mytv.tv.ui.utils.ifElse
 import top.yogiczy.mytv.tv.ui.utils.saveFocusRestorer
@@ -126,8 +130,8 @@ fun ClassicChannelItemList(
     LazyColumn(
         modifier = modifier
             .fillMaxHeight()
-            .width(if (showChannelLogoProvider()) 280.dp else 220.dp)
-            .background(MaterialTheme.colorScheme.surface.copy(0.8f))
+            .width(if (showChannelLogoProvider()) 292.dp else 236.dp)
+            .background(MaterialTheme.colors.surfaceContainer.copy(alpha = 0.96f))
             .ifElse(
                 LocalSettings.current.uiFocusOptimize,
                 Modifier.saveFocusRestorer {
@@ -135,8 +139,8 @@ fun ClassicChannelItemList(
                 },
             ),
         state = listState,
-        contentPadding = PaddingValues(8.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+        contentPadding = PaddingValues(10.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         itemsIndexed(channelList, key = { _, channel -> channel.hashCode() }) { index, channel ->
             val isSelected by remember { derivedStateOf { channel == focusedChannel } }
@@ -238,7 +242,8 @@ private fun ClassicChannelItem(
             }
         }
 
-        Box(modifier = modifier.clip(ListItemDefaults.shape().shape)) {
+        val itemShape = RoundedCornerShape(12.dp)
+        Box(modifier = modifier.clip(itemShape)) {
             DenseListItem(
                 modifier = Modifier
                     .focusRequester(focusRequester)
@@ -250,17 +255,33 @@ private fun ClassicChannelItem(
                         onSelect = onChannelSelected,
                         onLongSelect = onChannelFavoriteToggle,
                     ),
+                shape = ListItemDefaults.shape(shape = itemShape),
                 colors = ListItemDefaults.colors(
-                    focusedContainerColor = MaterialTheme.colorScheme.onSurface,
-                    selectedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                    selectedContentColor = MaterialTheme.colorScheme.onSurface,
+                    containerColor = androidx.compose.ui.graphics.Color.Transparent,
+                    focusedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                    focusedContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.42f),
+                    selectedContentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                    focusedSelectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                    focusedSelectedContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                ),
+                scale = ListItemDefaults.scale(focusedScale = 1.018f),
+                border = ListItemDefaults.border(
+                    focusedBorder = Border(
+                        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary),
+                        shape = itemShape,
+                    ),
                 ),
                 selected = isSelectedProvider(),
                 onClick = {},
                 headlineContent = {
                     Row{
-                        Text(text = channel.id, maxLines = 1,
-                            modifier = Modifier.alpha(0.9f).padding(top=3.dp,end = 6.dp))
+                        Text(
+                            text = channel.id,
+                            maxLines = 1,
+                            color = if (isFocused) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 3.dp, end = 8.dp),
+                        )
                         Text(
                             channel.name,
                             maxLines = 1,
@@ -285,7 +306,7 @@ private fun ClassicChannelItem(
                         .align(Alignment.BottomStart)
                         .fillMaxWidth(nowEpgProgramme.progress())
                         .height(3.dp)
-                        .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f)),
+                        .background(MaterialTheme.colorScheme.primary),
                 )
             }
         }

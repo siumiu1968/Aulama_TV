@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -35,6 +36,7 @@ import top.yogiczy.mytv.core.data.entities.channel.Channel
 import top.yogiczy.mytv.core.data.entities.epg.EpgProgramme.Companion.progress
 import top.yogiczy.mytv.core.data.entities.epg.EpgProgrammeRecent
 import top.yogiczy.mytv.tv.ui.theme.MyTVTheme
+import top.yogiczy.mytv.tv.ui.theme.colors
 import top.yogiczy.mytv.tv.ui.utils.handleKeyEvents
 import top.yogiczy.mytv.tv.ui.utils.ifElse
 import top.yogiczy.mytv.tv.ui.utils.saveRequestFocus
@@ -55,6 +57,7 @@ fun ChannelItem(
 
     var isFocused by remember { mutableStateOf(false) }
     val focusRequester = remember { FocusRequester() }
+    val itemShape = RoundedCornerShape(14.dp)
 
     LaunchedEffect(Unit) {
         if (initialFocused) {
@@ -74,11 +77,18 @@ fun ChannelItem(
                 onLongSelect = onChannelFavoriteToggle,
             ),
         colors = CardDefaults.colors(
-            containerColor = MaterialTheme.colorScheme.surface.copy(0.8f),
-            focusedContainerColor = MaterialTheme.colorScheme.onSurface,
+            containerColor = MaterialTheme.colors.surfaceContainerHigh.copy(alpha = 0.9f),
+            contentColor = MaterialTheme.colorScheme.onSurface,
+            focusedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+            focusedContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
         ),
+        shape = CardDefaults.shape(shape = itemShape),
+        scale = CardDefaults.scale(focusedScale = 1.055f),
         border = CardDefaults.border(
-            focusedBorder = Border(BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface)),
+            focusedBorder = Border(
+                border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary),
+                shape = itemShape,
+            ),
         ),
     ) {
         Column {
@@ -86,8 +96,8 @@ fun ChannelItem(
                 Box(
                     modifier = Modifier
                         .background(
-                            if (isFocused) MaterialTheme.colorScheme.surface.copy(0.9f)
-                            else MaterialTheme.colorScheme.surface.copy(0.5f)
+                            if (isFocused) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.08f)
+                            else MaterialTheme.colors.surfaceContainerHighest.copy(alpha = 0.72f)
                         )
                         .height(50.dp)
                         .fillMaxWidth()
@@ -183,8 +193,7 @@ private fun ChannelItemProgress(
                     .fillMaxWidth(nowProgramme.progress())
                     .height(2.dp)
                     .background(
-                        if (isFocused) MaterialTheme.colorScheme.surface.copy(alpha = 0.8f)
-                        else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
+                        MaterialTheme.colorScheme.primary
                     ),
             )
         }

@@ -1,7 +1,9 @@
 package top.yogiczy.mytv.tv.ui.screens.classicchannel.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.basicMarquee
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -28,6 +30,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.DenseListItem
+import androidx.tv.material3.Border
 import androidx.tv.material3.ListItemDefaults
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
@@ -38,6 +41,7 @@ import top.yogiczy.mytv.core.data.entities.channel.ChannelGroupList
 import top.yogiczy.mytv.tv.ui.material.rememberDebounceState
 import top.yogiczy.mytv.tv.ui.screens.settings.LocalSettings
 import top.yogiczy.mytv.tv.ui.theme.MyTVTheme
+import top.yogiczy.mytv.tv.ui.theme.colors
 import top.yogiczy.mytv.tv.ui.utils.focusOnLaunchedSaveable
 import top.yogiczy.mytv.tv.ui.utils.handleKeyEvents
 import top.yogiczy.mytv.tv.ui.utils.ifElse
@@ -90,9 +94,9 @@ fun ClassicChannelGroupItemList(
 
     LazyColumn(
         modifier = modifier
-            .width(140.dp)
+            .width(156.dp)
             .fillMaxHeight()
-            .background(MaterialTheme.colorScheme.surface.copy(0.9f))
+            .background(MaterialTheme.colors.surfaceContainerLow.copy(alpha = 0.97f))
             .ifElse(
                 LocalSettings.current.uiFocusOptimize,
                 Modifier.saveFocusRestorer {
@@ -100,8 +104,8 @@ fun ClassicChannelGroupItemList(
                 },
             ),
         state = listState,
-        contentPadding = PaddingValues(8.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+        contentPadding = PaddingValues(10.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         itemsIndexed(channelGroupList) { index, channelGroup ->
             val isSelected by remember { derivedStateOf { channelGroup == focusedChannelGroup } }
@@ -157,10 +161,22 @@ private fun ClassicChannelGroupItem(
                 focusRequester = focusRequester,
                 onSelect = {},
             ),
+        shape = ListItemDefaults.shape(shape = RoundedCornerShape(12.dp)),
         colors = ListItemDefaults.colors(
-            focusedContainerColor = MaterialTheme.colorScheme.onSurface,
-            selectedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-            selectedContentColor = MaterialTheme.colorScheme.onSurface,
+            containerColor = androidx.compose.ui.graphics.Color.Transparent,
+            focusedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+            focusedContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+            selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.46f),
+            selectedContentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+            focusedSelectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+            focusedSelectedContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        ),
+        scale = ListItemDefaults.scale(focusedScale = 1.025f),
+        border = ListItemDefaults.border(
+            focusedBorder = Border(
+                border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary),
+                shape = RoundedCornerShape(12.dp),
+            ),
         ),
         selected = isSelectedProvider(),
         onClick = {},

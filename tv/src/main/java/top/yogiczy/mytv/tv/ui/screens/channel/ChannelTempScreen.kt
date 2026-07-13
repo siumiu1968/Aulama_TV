@@ -1,16 +1,18 @@
 package top.yogiczy.mytv.tv.ui.screens.channel
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.dp
+import androidx.tv.material3.MaterialTheme
 import top.yogiczy.mytv.core.data.entities.channel.Channel
 import top.yogiczy.mytv.core.data.entities.epg.EpgProgramme
 import top.yogiczy.mytv.core.data.entities.epg.EpgProgrammeRecent
@@ -19,6 +21,7 @@ import top.yogiczy.mytv.tv.ui.screens.channel.components.ChannelInfo
 import top.yogiczy.mytv.tv.ui.screens.channel.components.ChannelNumber
 import top.yogiczy.mytv.tv.ui.screens.videoplayer.player.VideoPlayer
 import top.yogiczy.mytv.tv.ui.theme.MyTVTheme
+import top.yogiczy.mytv.tv.ui.theme.colors
 import top.yogiczy.mytv.tv.ui.tooling.PreviewWithLayoutGrids
 
 @Composable
@@ -39,25 +42,35 @@ fun ChannelTempScreen(
         ChannelNumber(
             modifier = Modifier
                 .align(Alignment.TopEnd)
-                .padding(top = childPadding.top, end = childPadding.end),
+                .padding(top = childPadding.top, end = childPadding.end)
+                .background(
+                    MaterialTheme.colors.surfaceContainerLow.copy(alpha = 0.86f),
+                    RoundedCornerShape(16.dp),
+                )
+                .border(
+                    1.dp,
+                    MaterialTheme.colorScheme.borderVariant.copy(alpha = 0.7f),
+                    RoundedCornerShape(16.dp),
+                )
+                .padding(horizontal = 14.dp, vertical = 6.dp),
             channelNumberProvider = { channelNumberProvider().toString().padStart(2, '0') },
         )
 
         ChannelInfo(
             modifier = Modifier
                 .align(Alignment.BottomStart)
+                .padding(start = childPadding.start, bottom = childPadding.bottom)
+                .fillMaxWidth(0.62f)
                 .background(
-                    brush = Brush.linearGradient(
-                        colors = listOf(
-                            Color(0x00000000),
-                            Color(0xB4000000),
-                            Color(0xF3000000),
-                        ),
-                        start = Offset(0f, 0f),
-                        end = Offset(0f, Float.POSITIVE_INFINITY),
-                    )
+                    MaterialTheme.colors.surfaceContainerLow.copy(alpha = 0.9f),
+                    RoundedCornerShape(18.dp),
                 )
-                .padding(childPadding.paddingValues),
+                .border(
+                    1.dp,
+                    MaterialTheme.colorScheme.borderVariant.copy(alpha = 0.7f),
+                    RoundedCornerShape(18.dp),
+                )
+                .padding(horizontal = 20.dp, vertical = 14.dp),
             channelProvider = channelProvider,
             channelUrlIdxProvider = channelUrlIdxProvider,
             recentEpgProgrammeProvider = recentEpgProgrammeProvider,

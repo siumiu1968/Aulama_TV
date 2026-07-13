@@ -1,6 +1,7 @@
 package top.yogiczy.mytv.tv.ui.screens.channel
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -11,9 +12,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -39,6 +43,7 @@ import top.yogiczy.mytv.tv.ui.screens.components.rememberScreenAutoCloseState
 import top.yogiczy.mytv.tv.ui.screens.datetime.components.DateTimeDetail
 import top.yogiczy.mytv.tv.ui.screens.videoplayer.player.VideoPlayer
 import top.yogiczy.mytv.tv.ui.theme.MyTVTheme
+import top.yogiczy.mytv.tv.ui.theme.colors
 import top.yogiczy.mytv.tv.ui.tooling.PreviewWithLayoutGrids
 import top.yogiczy.mytv.tv.ui.utils.ifElse
 
@@ -68,7 +73,15 @@ fun ChannelScreen(
         modifier = modifier
             .fillMaxSize()
             .pointerInput(Unit) { detectTapGestures { onClose() } }
-            .background(MaterialTheme.colorScheme.background.copy(alpha = 0.5f)),
+            .background(
+                Brush.verticalGradient(
+                    listOf(
+                        Color.Black.copy(alpha = 0.18f),
+                        Color.Black.copy(alpha = 0.46f),
+                        Color.Black.copy(alpha = 0.88f),
+                    ),
+                ),
+            ),
     ) {
         ChannelScreenTopRight(
             channelNumberProvider = {
@@ -112,7 +125,18 @@ fun ChannelScreenTopRight(
             .padding(top = childPadding.top, end = childPadding.end),
     ) {
         Row(
-            modifier = Modifier.align(Alignment.TopEnd),
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .background(
+                    MaterialTheme.colors.surfaceContainerLow.copy(alpha = 0.88f),
+                    RoundedCornerShape(18.dp),
+                )
+                .border(
+                    1.dp,
+                    MaterialTheme.colorScheme.borderVariant.copy(alpha = 0.72f),
+                    RoundedCornerShape(18.dp),
+                )
+                .padding(horizontal = 16.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             ChannelNumber(channelNumberProvider = channelNumberProvider)
@@ -120,8 +144,8 @@ fun ChannelScreenTopRight(
             Box(modifier = Modifier.padding(horizontal = 8.dp)) {
                 Spacer(
                     modifier = Modifier
-                        .background(MaterialTheme.colorScheme.onSurface)
-                        .width(2.dp)
+                        .background(MaterialTheme.colorScheme.borderVariant)
+                        .width(1.dp)
                         .height(30.dp),
                 )
             }

@@ -3,6 +3,7 @@ package top.yogiczy.mytv.tv.ui.screens.classicchannel
 import androidx.compose.animation.core.animateIntAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -15,6 +16,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -29,12 +33,15 @@ import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.MaterialTheme
+import androidx.tv.material3.Icon
 import androidx.tv.material3.Text
 import top.yogiczy.mytv.core.data.entities.channel.Channel
 import top.yogiczy.mytv.core.data.entities.channel.ChannelGroup
@@ -57,6 +64,7 @@ import top.yogiczy.mytv.tv.ui.screens.classicchannel.components.ClassicEpgItemLi
 import top.yogiczy.mytv.tv.ui.screens.components.rememberScreenAutoCloseState
 import top.yogiczy.mytv.tv.ui.screens.videoplayer.player.VideoPlayer
 import top.yogiczy.mytv.tv.ui.theme.MyTVTheme
+import top.yogiczy.mytv.tv.ui.theme.colors
 import top.yogiczy.mytv.tv.ui.tooling.PreviewWithLayoutGrids
 import kotlin.math.max
 
@@ -203,8 +211,8 @@ fun ClassicChannelScreen(
             Visible({ !epgListVisible }) {
                 ClassicPanelScreenShowEpgTip(
                     modifier = Modifier
-                        .background(MaterialTheme.colorScheme.surface.copy(0.7f))
-                        .padding(horizontal = 4.dp)
+                        .background(MaterialTheme.colors.surfaceContainerHigh.copy(alpha = 0.94f))
+                        .padding(horizontal = 8.dp)
                         .focusable(),
                     onTap = { epgListVisible = true },
                 )
@@ -225,13 +233,23 @@ fun ClassicChannelScreen(
             ChannelInfo(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .fillMaxWidth(0.5f)
+                    .fillMaxWidth(0.44f)
                     .padding(24.dp)
                     .background(
-                        MaterialTheme.colorScheme.surface.copy(0.8f),
-                        MaterialTheme.shapes.medium,
+                        brush = Brush.linearGradient(
+                            listOf(
+                                MaterialTheme.colors.surfaceContainerHigh.copy(alpha = 0.96f),
+                                MaterialTheme.colors.surfaceContainerLow.copy(alpha = 0.92f),
+                            ),
+                        ),
+                        shape = RoundedCornerShape(18.dp),
                     )
-                    .padding(horizontal = 20.dp, vertical = 10.dp),
+                    .border(
+                        1.dp,
+                        MaterialTheme.colorScheme.borderVariant.copy(alpha = 0.65f),
+                        RoundedCornerShape(18.dp),
+                    )
+                    .padding(horizontal = 20.dp, vertical = 14.dp),
                 channelProvider = currentChannelProvider,
                 channelUrlIdxProvider = currentChannelUrlIdxProvider,
                 recentEpgProgrammeProvider = {
@@ -255,14 +273,27 @@ private fun ClassicChannelScreenWrapper(
     Box(
         modifier = Modifier
             .fillMaxSize()
+            .background(
+                Brush.horizontalGradient(
+                    listOf(
+                        Color.Black.copy(alpha = 0.84f),
+                        Color.Black.copy(alpha = 0.48f),
+                        Color.Transparent,
+                    ),
+                ),
+            )
             .pointerInput(Unit) { detectTapGestures(onTap = { onClose() }) }
     ) {
         Box(
             modifier = modifier
                 .pointerInput(Unit) { detectTapGestures(onTap = { }) }
-//                .padding(24.dp)
-                .padding(top = 0.dp, start = 0.dp)
-                .clip(MaterialTheme.shapes.medium),
+                .padding(start = 24.dp, top = 24.dp, bottom = 24.dp)
+                .clip(RoundedCornerShape(22.dp))
+                .border(
+                    1.dp,
+                    MaterialTheme.colorScheme.borderVariant.copy(alpha = 0.72f),
+                    RoundedCornerShape(22.dp),
+                ),
         ) {
             content()
         }
@@ -283,9 +314,16 @@ private fun ClassicPanelScreenShowEpgTip(
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        "向右查看節目單".map {
-            Text(text = it.toString(), style = MaterialTheme.typography.labelSmall)
-        }
+        Icon(
+            imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+            contentDescription = "查看節目指南",
+            tint = MaterialTheme.colorScheme.primary,
+        )
+        Text(
+            text = "節\n目\n指\n南",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
