@@ -23,6 +23,23 @@ object Constants {
     const val DEFAULT_IPTV_SOURCE_URL =
         "https://gist.githubusercontent.com/siumiu1968/b6f1358a2504d228636149de4ca8d5e0/raw/hk_channels_merged_v2.m3u"
 
+    const val MAINLAND_IPTV_SOURCE_URL =
+        "https://gist.githubusercontent.com/siumiu1968/b6f1358a2504d228636149de4ca8d5e0/raw/cn_channels.m3u"
+
+    const val INTERNATIONAL_IPTV_SOURCE_URL =
+        "https://gist.githubusercontent.com/siumiu1968/b6f1358a2504d228636149de4ca8d5e0/raw/international_channels.m3u"
+
+    const val DEFAULT_IPTV_SOURCE_NAME = "Aulama 三區頻道（預設）"
+
+    val AULAMA_REGION_SOURCE_LIST = listOf(
+        "香港" to IptvSource(name = "香港", url = DEFAULT_IPTV_SOURCE_URL),
+        "中國" to IptvSource(name = "中國", url = MAINLAND_IPTV_SOURCE_URL),
+        "國際" to IptvSource(name = "國際", url = INTERNATIONAL_IPTV_SOURCE_URL),
+    )
+
+    fun isAulamaManagedSource(source: IptvSource) =
+        AULAMA_REGION_SOURCE_LIST.any { (_, regionSource) -> regionSource.url == source.url }
+
     /**
      * GitHub加速代理地址
      */
@@ -36,25 +53,8 @@ object Constants {
     val IPTV_SOURCE_LIST = IptvSourceList(
         listOf(
             IptvSource(
-                name = "香港台精選（預設）",
+                name = DEFAULT_IPTV_SOURCE_NAME,
                 url = DEFAULT_IPTV_SOURCE_URL,
-            ),
-            IptvSource(
-                name = "默認直播源 fanmingming（IPV6）",
-                url = "https://live.fanmingming.cn/tv/m3u/ipv6.m3u",
-            ),
-            IptvSource(
-                name = "默認直播源 冰茶",
-                url = GITHUB_PROXY+"https://raw.githubusercontent.com/ls125781003/tvboxtg/refs/heads/main/%E9%A5%AD%E5%A4%AA%E7%A1%AC/lives/%E5%86%B0%E8%8C%B6.txt",
-            ),
-            IptvSource(
-                name = "默認直播源 yuanzl77（IPV4/IPV6）",
-                url = GITHUB_PROXY+"https://raw.githubusercontent.com/yuanzl77/IPTV/main/live.m3u",
-            ),
-            IptvSource(
-                name = "默認直播源-電影列表",
-                url = "https://iptv-cdn.mybacc.com/list/movies.txt",
-//                url = GITHUB_PROXY+"https://raw.githubusercontent.com/minyoad/my-iptv/refs/heads/master/list/movies.txt",
             ),
         )
     )

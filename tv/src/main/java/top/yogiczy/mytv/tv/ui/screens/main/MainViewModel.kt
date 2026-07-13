@@ -3,6 +3,8 @@ package top.yogiczy.mytv.tv.ui.screens.main
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -14,12 +16,15 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.retry
 import kotlinx.coroutines.flow.retryWhen
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.withContext
+import top.yogiczy.mytv.core.data.entities.channel.ChannelGroup
 import top.yogiczy.mytv.core.data.entities.channel.ChannelGroupList
 import top.yogiczy.mytv.core.data.entities.channel.ChannelGroupList.Companion.channelList
 import top.yogiczy.mytv.core.data.entities.channel.ChannelList
 import top.yogiczy.mytv.core.data.entities.channel.ChannelRoute
 import top.yogiczy.mytv.core.data.entities.epg.EpgList
+import top.yogiczy.mytv.core.data.entities.iptvsource.IptvSource
 import top.yogiczy.mytv.core.data.repositories.epg.EpgRepository
 import top.yogiczy.mytv.core.data.repositories.iptv.IptvRepository
 import top.yogiczy.mytv.core.data.utils.ChannelUtil
@@ -67,11 +72,7 @@ class MainViewModel : ViewModel() {
 
     private suspend fun refreshChannel() {
         flow {
-            var iptvRepository= IptvRepository(Configs.iptvSourceCurrent)
-            iptvRepository.setDataChanged({ onChannelChanged() })
-            emit(
-                iptvRepository.getChannelGroupList(cacheTime = Configs.iptvSourceCacheTime)
-            )
+            emit(loadChannelGroupList())
         }
             .retryWhen { _, attempt ->
                 if (attempt >= Constants.HTTP_RETRY_COUNT) return@retryWhen false
@@ -90,6 +91,42 @@ class MainViewModel : ViewModel() {
                 it
             }
             .collect()
+    }
+
+    private suspend fun loadChannelGroupList(): ChannelGroupList {
+        val currentSource = Configs.iptvSourceCurrent
+        if (!Constants.isAulamaManagedSource(currentSource)) {
+            return loadSource(currentSource)
+        }
+
+        val regionResults = supervisorScope {
+            Constants.AULAMA_REGION_SOURCE_LIST.map { (region, source) ->
+                async { runCatching { region to loadSource(source) } }
+            }.awaitAll()
+        }
+        val loadedRegions = regionResults.mapNotNull { it.getOrNull() }
+        if (loadedRegions.isEmpty()) {
+            throw regionResults.firstNotNullOfOrNull { it.exceptionOrNull() }
+                ?: IllegalStateException("暫時未能取得頻道清單")
+        }
+
+        var channelId = 0
+        return ChannelGroupList(loadedRegions.mapNotNull { (region, groupList) ->
+            val channels = groupList.channelList
+            if (channels.isEmpty()) return@mapNotNull null
+            ChannelGroup(
+                name = region,
+                channelList = ChannelList(channels.map { channel ->
+                    channel.copy(id = (++channelId).toString())
+                }),
+            )
+        })
+    }
+
+    private suspend fun loadSource(source: IptvSource): ChannelGroupList {
+        val repository = IptvRepository(source)
+        repository.setDataChanged { onChannelChanged() }
+        return repository.getChannelGroupList(cacheTime = Configs.iptvSourceCacheTime)
     }
 
     private suspend fun hybridChannel(channelGroupList: ChannelGroupList) =

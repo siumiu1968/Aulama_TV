@@ -209,8 +209,9 @@ object Configs {
             )
             val isLegacyHongKongSource = source.name == "香港台精選（預設）" &&
                 source.url.contains("gist.githubusercontent.com/siumiu1968/b6f1358a2504d228636149de4ca8d5e0/raw/")
-            return if (isLegacyHongKongSource && source.url != Constants.DEFAULT_IPTV_SOURCE_URL) {
-                source.copy(url = Constants.DEFAULT_IPTV_SOURCE_URL).also { migrated ->
+            val defaultSource = Constants.IPTV_SOURCE_LIST.first()
+            return if ((isLegacyHongKongSource || Constants.isAulamaManagedSource(source)) && source != defaultSource) {
+                defaultSource.also { migrated ->
                     SP.putString(KEY.IPTV_SOURCE_CURRENT.name, Json.encodeToString(migrated))
                 }
             } else {
