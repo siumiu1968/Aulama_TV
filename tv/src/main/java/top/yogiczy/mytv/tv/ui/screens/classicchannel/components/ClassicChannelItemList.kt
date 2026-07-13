@@ -36,6 +36,8 @@ import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
@@ -58,7 +60,9 @@ import top.yogiczy.mytv.tv.ui.material.rememberDebounceState
 import top.yogiczy.mytv.tv.ui.screens.channel.components.ChannelItemLogo
 import top.yogiczy.mytv.tv.ui.screens.settings.LocalSettings
 import top.yogiczy.mytv.tv.ui.theme.MyTVTheme
-import top.yogiczy.mytv.tv.ui.theme.colors
+import top.yogiczy.mytv.tv.ui.theme.AulamaTvBlue
+import top.yogiczy.mytv.tv.ui.theme.AulamaTvCyan
+import top.yogiczy.mytv.tv.ui.theme.AulamaTvOrange
 import top.yogiczy.mytv.tv.ui.utils.handleKeyEvents
 import top.yogiczy.mytv.tv.ui.utils.ifElse
 import top.yogiczy.mytv.tv.ui.utils.saveFocusRestorer
@@ -131,7 +135,15 @@ fun ClassicChannelItemList(
         modifier = modifier
             .fillMaxHeight()
             .width(if (showChannelLogoProvider()) 292.dp else 236.dp)
-            .background(MaterialTheme.colors.surfaceContainer.copy(alpha = 0.96f))
+            .background(
+                Brush.verticalGradient(
+                    listOf(
+                        Color(0xE60A1725),
+                        Color(0xD90B1B2B),
+                        Color(0xD9101725),
+                    )
+                )
+            )
             .ifElse(
                 LocalSettings.current.uiFocusOptimize,
                 Modifier.saveFocusRestorer {
@@ -258,17 +270,17 @@ private fun ClassicChannelItem(
                 shape = ListItemDefaults.shape(shape = itemShape),
                 colors = ListItemDefaults.colors(
                     containerColor = androidx.compose.ui.graphics.Color.Transparent,
-                    focusedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                    focusedContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                    selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.42f),
-                    selectedContentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                    focusedSelectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                    focusedSelectedContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    focusedContainerColor = AulamaTvBlue.copy(alpha = 0.82f),
+                    focusedContentColor = Color.White,
+                    selectedContainerColor = AulamaTvCyan.copy(alpha = 0.16f),
+                    selectedContentColor = Color.White,
+                    focusedSelectedContainerColor = AulamaTvBlue.copy(alpha = 0.88f),
+                    focusedSelectedContentColor = Color.White,
                 ),
                 scale = ListItemDefaults.scale(focusedScale = 1.018f),
                 border = ListItemDefaults.border(
                     focusedBorder = Border(
-                        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary),
+                        border = BorderStroke(2.dp, AulamaTvCyan),
                         shape = itemShape,
                     ),
                 ),
@@ -279,7 +291,7 @@ private fun ClassicChannelItem(
                         Text(
                             text = channel.id,
                             maxLines = 1,
-                            color = if (isFocused) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = if (isFocused) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(top = 3.dp, end = 8.dp),
                         )
                         Text(
@@ -306,7 +318,7 @@ private fun ClassicChannelItem(
                         .align(Alignment.BottomStart)
                         .fillMaxWidth(nowEpgProgramme.progress())
                         .height(3.dp)
-                        .background(MaterialTheme.colorScheme.primary),
+                        .background(AulamaTvOrange),
                 )
             }
         }

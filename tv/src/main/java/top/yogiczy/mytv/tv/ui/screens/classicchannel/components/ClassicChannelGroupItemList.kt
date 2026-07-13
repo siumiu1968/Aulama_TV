@@ -26,6 +26,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -41,7 +43,8 @@ import top.yogiczy.mytv.core.data.entities.channel.ChannelGroupList
 import top.yogiczy.mytv.tv.ui.material.rememberDebounceState
 import top.yogiczy.mytv.tv.ui.screens.settings.LocalSettings
 import top.yogiczy.mytv.tv.ui.theme.MyTVTheme
-import top.yogiczy.mytv.tv.ui.theme.colors
+import top.yogiczy.mytv.tv.ui.theme.AulamaTvBlue
+import top.yogiczy.mytv.tv.ui.theme.AulamaTvCyan
 import top.yogiczy.mytv.tv.ui.utils.focusOnLaunchedSaveable
 import top.yogiczy.mytv.tv.ui.utils.handleKeyEvents
 import top.yogiczy.mytv.tv.ui.utils.ifElse
@@ -96,7 +99,15 @@ fun ClassicChannelGroupItemList(
         modifier = modifier
             .width(156.dp)
             .fillMaxHeight()
-            .background(MaterialTheme.colors.surfaceContainerLow.copy(alpha = 0.97f))
+            .background(
+                Brush.verticalGradient(
+                    listOf(
+                        Color(0xEB07131F),
+                        Color(0xDE0A1725),
+                        Color(0xDE111625),
+                    )
+                )
+            )
             .ifElse(
                 LocalSettings.current.uiFocusOptimize,
                 Modifier.saveFocusRestorer {
@@ -164,17 +175,17 @@ private fun ClassicChannelGroupItem(
         shape = ListItemDefaults.shape(shape = RoundedCornerShape(12.dp)),
         colors = ListItemDefaults.colors(
             containerColor = androidx.compose.ui.graphics.Color.Transparent,
-            focusedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-            focusedContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-            selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.46f),
-            selectedContentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-            focusedSelectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-            focusedSelectedContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+            focusedContainerColor = AulamaTvBlue.copy(alpha = 0.82f),
+            focusedContentColor = Color.White,
+            selectedContainerColor = AulamaTvCyan.copy(alpha = 0.16f),
+            selectedContentColor = Color.White,
+            focusedSelectedContainerColor = AulamaTvBlue.copy(alpha = 0.88f),
+            focusedSelectedContentColor = Color.White,
         ),
         scale = ListItemDefaults.scale(focusedScale = 1.025f),
         border = ListItemDefaults.border(
             focusedBorder = Border(
-                border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary),
+                border = BorderStroke(2.dp, AulamaTvCyan),
                 shape = RoundedCornerShape(12.dp),
             ),
         ),

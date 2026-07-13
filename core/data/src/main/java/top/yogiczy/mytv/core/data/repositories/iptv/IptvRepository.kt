@@ -3,6 +3,7 @@ package top.yogiczy.mytv.core.data.repositories.iptv
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.Request
+import okhttp3.CacheControl
 import top.yogiczy.mytv.core.data.entities.channel.ChannelGroupList
 import top.yogiczy.mytv.core.data.entities.channel.ChannelList
 import top.yogiczy.mytv.core.data.entities.iptvsource.IptvSource
@@ -45,7 +46,10 @@ class IptvRepository(
         log.d("獲取遠程直播源: $source")
 
         val client = OkHttp.client
-        val request = Request.Builder().url(sourceUrl).build()
+        val request = Request.Builder()
+            .url(sourceUrl)
+            .cacheControl(CacheControl.FORCE_NETWORK)
+            .build()
 
         try {
             val response = client.newCall(request).await()

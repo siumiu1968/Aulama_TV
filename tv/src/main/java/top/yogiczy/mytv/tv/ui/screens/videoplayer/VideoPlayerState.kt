@@ -18,6 +18,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
+import top.yogiczy.mytv.core.data.entities.channel.ChannelRoute
 import top.yogiczy.mytv.tv.ui.screens.settings.SettingsViewModel
 import top.yogiczy.mytv.tv.ui.screens.videoplayer.player.Media3VideoPlayer
 import top.yogiczy.mytv.tv.ui.screens.videoplayer.player.VideoPlayer
@@ -33,7 +34,7 @@ class VideoPlayerState(
     private val coroutineScope: kotlinx.coroutines.CoroutineScope,
     private var defaultDisplayModeProvider: () -> VideoPlayerDisplayMode = { VideoPlayerDisplayMode.ORIGINAL },
 ) {
-    private var currentUrl: String? = null
+    private var currentRoute: ChannelRoute? = null
     private var currentSurface: Any? = null
     private var currentTexture: Any? = null
     /** 顯示模式 */
@@ -51,6 +52,10 @@ class VideoPlayerState(
     /** 正在播放 */
     var isPlaying by mutableStateOf(false)
 
+    /** 新線路真正渲染第一格畫面後先為 true。 */
+    var hasRenderedFirstFrame by mutableStateOf(false)
+        private set
+
     /** 總時長 */
     var duration by mutableLongStateOf(0L)
 
@@ -60,9 +65,12 @@ class VideoPlayerState(
     /** 元數據 */
     var metadata by mutableStateOf(VideoPlayer.Metadata())
 
-    fun prepare(url: String) {
+    fun prepare(route: ChannelRoute) {
+        currentRoute = route
         error = null
-        instance.prepare(url)
+        hasRenderedFirstFrame = false
+        isBuffering = true
+        instance.prepare(route)
     }
 
     fun play() {
@@ -78,6 +86,8 @@ class VideoPlayerState(
     }
 
     fun stop() {
+        hasRenderedFirstFrame = false
+        isBuffering = false
         instance.stop()
     }
 
@@ -92,11 +102,16 @@ class VideoPlayerState(
     }
 
     private val onReadyListeners = mutableListOf<() -> Unit>()
+    private val onFirstFrameListeners = mutableListOf<() -> Unit>()
     private val onErrorListeners = mutableListOf<() -> Unit>()
     private val onInterruptListeners = mutableListOf<() -> Unit>()
 
     fun onReady(listener: () -> Unit) {
         onReadyListeners.add(listener)
+    }
+
+    fun onFirstFrame(listener: () -> Unit) {
+        onFirstFrameListeners.add(listener)
     }
 
     fun onError(listener: () -> Unit) {
@@ -117,7 +132,7 @@ class VideoPlayerState(
         // 監聽播放器類型變化
         settingsViewModel.videoPlayerTypeValue = Configs.videoPlayerType
         settingsViewModel.onVideoPlayerTypeChanged = { type ->
-            currentUrl?.let { url ->
+            currentRoute?.let { route ->
                 val newInstance = when (type) {
                     Configs.VideoPlayerType.IJK -> IJKVideoPlayer(context, coroutineScope)
                     Configs.VideoPlayerType.MEDIA3 -> Media3VideoPlayer(context, coroutineScope)
@@ -136,18 +151,17 @@ class VideoPlayerState(
                 initialize()
                 
                 // 恢復播放狀態
-                prepare(url)
+                prepare(route)
                 seekTo(position)
                 if (wasPlaying) play()
                 
                 // 恢復surface
-                when (currentSurface) {
-                    is SurfaceView -> setVideoSurfaceView(currentSurface as SurfaceView)
-                    is TextureView -> setVideoTextureView(currentTexture as TextureView)
-                }
+                (currentSurface as? SurfaceView)?.let(::setVideoSurfaceView)
+                (currentTexture as? TextureView)?.let(::setVideoTextureView)
             }
         }
         instance.onError { ex ->
+            hasRenderedFirstFrame = false
             error = ex?.let { "${it.errorCodeName}(${it.errorCode})" }
                 ?.apply { onErrorListeners.forEach { it.invoke() } }
 
@@ -162,6 +176,11 @@ class VideoPlayerState(
             if (it) error = null
         }
         instance.onPrepared { }
+        instance.onFirstFrame {
+            hasRenderedFirstFrame = true
+            isBuffering = false
+            onFirstFrameListeners.forEach { it.invoke() }
+        }
         instance.onIsPlayingChanged { isPlaying = it }
         instance.onDurationChanged { duration = it }
         instance.onCurrentPositionChanged { currentPosition = it }
@@ -171,6 +190,7 @@ class VideoPlayerState(
 
     fun release() {
         onReadyListeners.clear()
+        onFirstFrameListeners.clear()
         onErrorListeners.clear()
         instance.release()
     }

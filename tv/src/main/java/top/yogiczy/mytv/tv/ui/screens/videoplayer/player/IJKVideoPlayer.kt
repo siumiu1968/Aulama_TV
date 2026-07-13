@@ -2,6 +2,8 @@ package top.yogiczy.mytv.tv.ui.screens.videoplayer.player
 
 import android.content.Context
 import android.graphics.SurfaceTexture
+import android.graphics.Color as AndroidColor
+import android.graphics.PorterDuff
 import android.net.Uri
 import android.view.Surface
 import android.view.SurfaceHolder
@@ -11,6 +13,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import top.yogiczy.mytv.core.data.entities.channel.ChannelRoute
 import tv.danmaku.ijk.media.player.IMediaPlayer
 import tv.danmaku.ijk.media.player.IjkMediaPlayer
 import top.yogiczy.mytv.core.data.utils.Logger
@@ -22,9 +25,9 @@ class IJKVideoPlayer(
 ) : VideoPlayer(coroutineScope) {
     private val log = Logger.create(javaClass.simpleName)
 
-    private var currentUrl: String? = null
+    private var currentRoute: ChannelRoute? = null
     private var retryCount = 0
-    private val MAX_RETRY_COUNT = 3
+    private val maxRetryCount = 1
 
     private val ijkPlayer by lazy {
         IjkMediaPlayer().apply {
@@ -88,7 +91,6 @@ class IJKVideoPlayer(
         IMediaPlayer.OnCompletionListener {
         
         override fun onPrepared(mp: IMediaPlayer?) {
-            triggerPrepared()
             triggerReady()
             
             updatePositionJob?.cancel()
@@ -105,7 +107,11 @@ class IJKVideoPlayer(
             when (what) {
                 IMediaPlayer.MEDIA_INFO_BUFFERING_START -> triggerBuffering(true)
                 IMediaPlayer.MEDIA_INFO_BUFFERING_END -> triggerBuffering(false)
-                IMediaPlayer.MEDIA_INFO_VIDEO_RENDERING_START -> triggerIsPlayingChanged(true)
+                IMediaPlayer.MEDIA_INFO_VIDEO_RENDERING_START -> {
+                    retryCount = 0
+                    triggerFirstFrame()
+                    triggerIsPlayingChanged(true)
+                }
             }
             return true
         }
@@ -113,11 +119,11 @@ class IJKVideoPlayer(
         override fun onError(mp: IMediaPlayer?, what: Int, extra: Int): Boolean {
             log.e("onError what=$what extra=$extra")
             // -110 ETIMEDOUT  -138 ENOSYS  均做二次重試
-            if ((what == -110 || what == -138) && retryCount < MAX_RETRY_COUNT) {
+            if ((what == -110 || what == -138) && retryCount < maxRetryCount) {
                 retryCount++
                 coroutineScope.launch {
-                    delay(1500 * retryCount.toLong())
-                    currentUrl?.let { prepare(it) }
+                    delay(750)
+                    currentRoute?.let { prepare(it) }
                 }
                 return true   // 自己消化掉，不拋到 UI 層
             }
@@ -158,20 +164,21 @@ class IJKVideoPlayer(
         super.release()
     }
 
-    override fun prepare(url: String) {
-        currentUrl = url
+    override fun prepare(route: ChannelRoute) {
+        val isNewRoute = currentRoute?.url != route.url
+        currentRoute = route
+        if (isNewRoute) retryCount = 0
         try {
+            clearCurrentSurface()
             ijkPlayer.reset()
             // 在設置數據源前確保Surface有效
             if (currentSurface != null) {
                 ijkPlayer.setSurface(currentSurface)
             }
-            /* 關鍵：不要帶任何自定義頭，防止服務器拒SETUP */
-            val headers = emptyMap<String, String>()   // ← 空 map，讓 FFmpeg 走原生流程
-            ijkPlayer.setDataSource(context, Uri.parse(url), headers)
+            ijkPlayer.setDataSource(context, Uri.parse(route.url), route.requestHeaders)
             setOption()
             ijkPlayer.prepareAsync()
-            retryCount = 0
+            triggerPrepared()
         } catch (e: Exception) {
             handleError(e)
         }
@@ -179,11 +186,11 @@ class IJKVideoPlayer(
     // 添加錯誤處理方法
     private fun handleError(e: Exception) {
         log.e("playback error", e)
-        if (retryCount < MAX_RETRY_COUNT) {
+        if (retryCount < maxRetryCount) {
             retryCount++
             coroutineScope.launch {
                 delay(1000 * retryCount.toLong()) // 指數退避
-                currentUrl?.let { prepare(it) }
+                currentRoute?.let { prepare(it) }
             }
         } else {
             triggerError(PlaybackException("PlaybackError", -1))
@@ -224,6 +231,16 @@ class IJKVideoPlayer(
 
     // 添加成員變量保存當前Surface
     private var currentSurface: Surface? = null
+
+    private fun clearCurrentSurface() {
+        val surface = currentSurface?.takeIf(Surface::isValid) ?: return
+        val canvas = runCatching { surface.lockCanvas(null) }.getOrNull() ?: return
+        try {
+            canvas.drawColor(AndroidColor.BLACK, PorterDuff.Mode.SRC)
+        } finally {
+            runCatching { surface.unlockCanvasAndPost(canvas) }
+        }
+    }
 
     override fun setVideoSurfaceView(surfaceView: SurfaceView) {
         surfaceView.holder.addCallback(object : SurfaceHolder.Callback {

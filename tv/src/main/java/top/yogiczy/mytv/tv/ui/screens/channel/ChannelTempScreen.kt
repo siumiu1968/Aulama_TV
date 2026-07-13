@@ -1,7 +1,5 @@
 package top.yogiczy.mytv.tv.ui.screens.channel
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -12,7 +10,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.tv.material3.MaterialTheme
 import top.yogiczy.mytv.core.data.entities.channel.Channel
 import top.yogiczy.mytv.core.data.entities.epg.EpgProgramme
 import top.yogiczy.mytv.core.data.entities.epg.EpgProgrammeRecent
@@ -21,7 +18,7 @@ import top.yogiczy.mytv.tv.ui.screens.channel.components.ChannelInfo
 import top.yogiczy.mytv.tv.ui.screens.channel.components.ChannelNumber
 import top.yogiczy.mytv.tv.ui.screens.videoplayer.player.VideoPlayer
 import top.yogiczy.mytv.tv.ui.theme.MyTVTheme
-import top.yogiczy.mytv.tv.ui.theme.colors
+import top.yogiczy.mytv.tv.ui.theme.aulamaFrostedPanel
 import top.yogiczy.mytv.tv.ui.tooling.PreviewWithLayoutGrids
 
 @Composable
@@ -43,14 +40,9 @@ fun ChannelTempScreen(
             modifier = Modifier
                 .align(Alignment.TopEnd)
                 .padding(top = childPadding.top, end = childPadding.end)
-                .background(
-                    MaterialTheme.colors.surfaceContainerLow.copy(alpha = 0.86f),
-                    RoundedCornerShape(16.dp),
-                )
-                .border(
-                    1.dp,
-                    MaterialTheme.colorScheme.borderVariant.copy(alpha = 0.7f),
-                    RoundedCornerShape(16.dp),
+                .aulamaFrostedPanel(
+                    shape = RoundedCornerShape(16.dp),
+                    opacity = 0.8f,
                 )
                 .padding(horizontal = 14.dp, vertical = 6.dp),
             channelNumberProvider = { channelNumberProvider().toString().padStart(2, '0') },
@@ -60,15 +52,10 @@ fun ChannelTempScreen(
             modifier = Modifier
                 .align(Alignment.BottomStart)
                 .padding(start = childPadding.start, bottom = childPadding.bottom)
-                .fillMaxWidth(0.62f)
-                .background(
-                    MaterialTheme.colors.surfaceContainerLow.copy(alpha = 0.9f),
-                    RoundedCornerShape(18.dp),
-                )
-                .border(
-                    1.dp,
-                    MaterialTheme.colorScheme.borderVariant.copy(alpha = 0.7f),
-                    RoundedCornerShape(18.dp),
+                .fillMaxWidth(0.58f)
+                .aulamaFrostedPanel(
+                    shape = RoundedCornerShape(18.dp),
+                    opacity = 0.83f,
                 )
                 .padding(horizontal = 20.dp, vertical = 14.dp),
             channelProvider = channelProvider,

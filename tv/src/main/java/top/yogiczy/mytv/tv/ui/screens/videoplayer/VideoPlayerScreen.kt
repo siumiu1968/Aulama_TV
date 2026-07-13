@@ -2,6 +2,8 @@ package top.yogiczy.mytv.tv.ui.screens.videoplayer
 
 import android.view.SurfaceView
 import android.view.TextureView
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.aspectRatio
@@ -9,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -34,6 +37,11 @@ fun VideoPlayerScreen(
     showMetadataProvider: () -> Boolean = { false },
 ) {
     val context = LocalContext.current
+    val previousFrameCoverAlpha by animateFloatAsState(
+        targetValue = if (state.hasRenderedFirstFrame) 0f else 1f,
+        animationSpec = tween(durationMillis = 180),
+        label = "channel-switch-cover",
+    )
 
     Box(
         modifier = modifier
@@ -72,6 +80,13 @@ fun VideoPlayerScreen(
                 )
             }
         }
+
+        // 換台期間遮住 SurfaceView 留低嘅舊畫面；首格新畫面出現後先淡走。
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = previousFrameCoverAlpha))
+        )
     }
 
     VideoPlayerScreenCover(

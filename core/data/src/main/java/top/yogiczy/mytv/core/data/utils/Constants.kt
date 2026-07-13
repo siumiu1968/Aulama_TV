@@ -13,7 +13,7 @@ object Constants {
     /**
      * 應用 標題
      */
-    const val APP_TITLE = "我的電視"
+    const val APP_TITLE = "Aulama TV"
 
     /**
      * 應用 代碼倉庫

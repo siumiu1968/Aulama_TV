@@ -42,23 +42,22 @@ abstract class FileCacheRepository(
         isExpired: (lastModified: Long, cacheData: String?) -> Boolean,
         refreshOp: suspend () -> String,
     ): String {
-        var data = getCacheData()
+        val cachedData = getCacheData()
+        val shouldRefresh = cachedData.isNullOrBlank() ||
+            isExpired(getCacheFile().lastModified(), cachedData)
 
-        if (isExpired(getCacheFile().lastModified(), data)) {
-            data = null
+        if (!shouldRefresh) return cachedData
+
+        return try {
+            val refreshedData = refreshOp()
+            if (refreshedData.isBlank()) error("刷新資料為空")
+            if (refreshedData != cachedData) onDataChanged?.invoke()
+            setCacheData(refreshedData)
+            refreshedData
+        } catch (ex: Exception) {
+            // 父母隔一段時間再開機時，即使網絡暫時不通，仍保留上次可用頻道。
+            cachedData?.takeIf { it.isNotBlank() } ?: throw ex
         }
-
-        if (data.isNullOrBlank()) {
-            data = refreshOp()
-
-            if(data!=getCacheData()) {
-                onDataChanged?.invoke()
-            }
-
-            setCacheData(data)
-        }
-
-        return data
     }
 
     open suspend fun clearCache() {

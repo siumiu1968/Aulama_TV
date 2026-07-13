@@ -81,11 +81,7 @@ fun MainContent(
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_START) {
-                // 重新走一遍“換台”邏輯，達到刷新目的
-                mainContentState.changeCurrentChannel(
-                    mainContentState.currentChannel,
-                    mainContentState.currentChannelUrlIdx
-                )
+                mainContentState.refreshCurrentChannel()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -112,22 +108,6 @@ fun MainContent(
                     if (settingsViewModel.iptvChannelChangeFlip) mainContentState.changeCurrentChannelToPrev()
                     else mainContentState.changeCurrentChannelToNext()
                 },
-                onLeft = {
-                    if (mainContentState.currentChannel.urlList.size > 1) {
-                        mainContentState.changeCurrentChannel(
-                            mainContentState.currentChannel,
-                            mainContentState.currentChannelUrlIdx - 1,
-                        )
-                    }
-                },
-                onRight = {
-                    if (mainContentState.currentChannel.urlList.size > 1) {
-                        mainContentState.changeCurrentChannel(
-                            mainContentState.currentChannel,
-                            mainContentState.currentChannelUrlIdx + 1,
-                        )
-                    }
-                },
                 onSelect = { mainContentState.isChannelScreenVisible = true },
                 onLongSelect = { mainContentState.isQuickOpScreenVisible = true },
                 onSettings = { mainContentState.isQuickOpScreenVisible = true },
@@ -144,22 +124,6 @@ fun MainContent(
                 onSwipeUp = {
                     if (settingsViewModel.iptvChannelChangeFlip) mainContentState.changeCurrentChannelToPrev()
                     else mainContentState.changeCurrentChannelToNext()
-                },
-                onSwipeRight = {
-                    if (mainContentState.currentChannel.urlList.size > 1) {
-                        mainContentState.changeCurrentChannel(
-                            mainContentState.currentChannel,
-                            mainContentState.currentChannelUrlIdx - 1,
-                        )
-                    }
-                },
-                onSwipeLeft = {
-                    if (mainContentState.currentChannel.urlList.size > 1) {
-                        mainContentState.changeCurrentChannel(
-                            mainContentState.currentChannel,
-                            mainContentState.currentChannelUrlIdx + 1,
-                        )
-                    }
                 },
             ),
     ) {

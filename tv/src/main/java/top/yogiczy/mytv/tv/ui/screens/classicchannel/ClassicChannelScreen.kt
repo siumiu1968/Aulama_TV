@@ -64,7 +64,7 @@ import top.yogiczy.mytv.tv.ui.screens.classicchannel.components.ClassicEpgItemLi
 import top.yogiczy.mytv.tv.ui.screens.components.rememberScreenAutoCloseState
 import top.yogiczy.mytv.tv.ui.screens.videoplayer.player.VideoPlayer
 import top.yogiczy.mytv.tv.ui.theme.MyTVTheme
-import top.yogiczy.mytv.tv.ui.theme.colors
+import top.yogiczy.mytv.tv.ui.theme.aulamaFrostedPanel
 import top.yogiczy.mytv.tv.ui.tooling.PreviewWithLayoutGrids
 import kotlin.math.max
 
@@ -211,7 +211,10 @@ fun ClassicChannelScreen(
             Visible({ !epgListVisible }) {
                 ClassicPanelScreenShowEpgTip(
                     modifier = Modifier
-                        .background(MaterialTheme.colors.surfaceContainerHigh.copy(alpha = 0.94f))
+                        .aulamaFrostedPanel(
+                            shape = RoundedCornerShape(topEnd = 22.dp, bottomEnd = 22.dp),
+                            opacity = 0.8f,
+                        )
                         .padding(horizontal = 8.dp)
                         .focusable(),
                     onTap = { epgListVisible = true },
@@ -235,19 +238,9 @@ fun ClassicChannelScreen(
                     .align(Alignment.BottomEnd)
                     .fillMaxWidth(0.44f)
                     .padding(24.dp)
-                    .background(
-                        brush = Brush.linearGradient(
-                            listOf(
-                                MaterialTheme.colors.surfaceContainerHigh.copy(alpha = 0.96f),
-                                MaterialTheme.colors.surfaceContainerLow.copy(alpha = 0.92f),
-                            ),
-                        ),
+                    .aulamaFrostedPanel(
                         shape = RoundedCornerShape(18.dp),
-                    )
-                    .border(
-                        1.dp,
-                        MaterialTheme.colorScheme.borderVariant.copy(alpha = 0.65f),
-                        RoundedCornerShape(18.dp),
+                        opacity = 0.82f,
                     )
                     .padding(horizontal = 20.dp, vertical = 14.dp),
                 channelProvider = currentChannelProvider,
@@ -276,8 +269,8 @@ private fun ClassicChannelScreenWrapper(
             .background(
                 Brush.horizontalGradient(
                     listOf(
-                        Color.Black.copy(alpha = 0.84f),
-                        Color.Black.copy(alpha = 0.48f),
+                        Color.Black.copy(alpha = 0.7f),
+                        Color.Black.copy(alpha = 0.38f),
                         Color.Transparent,
                     ),
                 ),

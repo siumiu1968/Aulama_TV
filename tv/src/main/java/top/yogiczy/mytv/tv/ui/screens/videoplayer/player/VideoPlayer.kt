@@ -6,6 +6,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import top.yogiczy.mytv.core.data.entities.channel.ChannelRoute
 
 import top.yogiczy.mytv.tv.ui.utils.Configs
 
@@ -22,7 +23,7 @@ abstract class VideoPlayer(
         clearAllListeners()
     }
 
-    abstract fun prepare(url: String)
+    abstract fun prepare(route: ChannelRoute)
 
     abstract fun play()
 
@@ -48,6 +49,7 @@ abstract class VideoPlayer(
     private val onReadyListeners = mutableListOf<() -> Unit>()
     private val onBufferingListeners = mutableListOf<(buffering: Boolean) -> Unit>()
     private val onPreparedListeners = mutableListOf<() -> Unit>()
+    private val onFirstFrameListeners = mutableListOf<() -> Unit>()
 
     private val onIsPlayingChanged = mutableListOf<(isPlaying: Boolean) -> Unit>()
     private val onDurationChanged = mutableListOf<(duration: Long) -> Unit>()
@@ -61,6 +63,7 @@ abstract class VideoPlayer(
         onReadyListeners.clear()
         onBufferingListeners.clear()
         onPreparedListeners.clear()
+        onFirstFrameListeners.clear()
         onIsPlayingChanged.clear()
         onDurationChanged.clear()
         onCurrentPositionChanged.clear()
@@ -84,7 +87,12 @@ abstract class VideoPlayer(
 
     protected fun triggerReady() {
         onReadyListeners.forEach { it() }
+    }
+
+    protected fun triggerFirstFrame() {
+        onFirstFrameListeners.forEach { it() }
         loadTimeoutJob?.cancel()
+        loadTimeoutJob = null
     }
 
     protected fun triggerBuffering(buffering: Boolean) {
@@ -146,6 +154,10 @@ abstract class VideoPlayer(
 
     fun onPrepared(listener: () -> Unit) {
         onPreparedListeners.add(listener)
+    }
+
+    fun onFirstFrame(listener: () -> Unit) {
+        onFirstFrameListeners.add(listener)
     }
 
     fun onIsPlayingChanged(listener: (isPlaying: Boolean) -> Unit) {

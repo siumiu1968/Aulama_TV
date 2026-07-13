@@ -21,6 +21,7 @@ import android.content.BroadcastReceiver
 import androidx.core.content.ContextCompat
 import top.yogiczy.mytv.core.data.entities.channel.Channel
 import top.yogiczy.mytv.core.data.entities.channel.ChannelGroupList
+import top.yogiczy.mytv.core.data.entities.channel.ChannelRoute
 import top.yogiczy.mytv.core.data.entities.channel.ChannelGroupList.Companion.channelIdx
 import top.yogiczy.mytv.core.data.entities.channel.ChannelGroupList.Companion.channelList
 import top.yogiczy.mytv.core.data.entities.epg.EpgProgramme
@@ -33,6 +34,7 @@ import top.yogiczy.mytv.tv.ui.material.Snackbar
 import top.yogiczy.mytv.tv.ui.screens.settings.SettingsViewModel
 import top.yogiczy.mytv.tv.ui.screens.videoplayer.VideoPlayerState
 import top.yogiczy.mytv.tv.ui.screens.videoplayer.rememberVideoPlayerState
+import top.yogiczy.mytv.tv.ui.utils.IptvRouteHealthStore
 import java.net.URI
 import java.text.SimpleDateFormat
 import java.util.Locale
@@ -55,6 +57,11 @@ class MainContentState(
 
     private var _currentPlaybackEpgProgramme by mutableStateOf<EpgProgramme?>(null)
     val currentPlaybackEpgProgramme get() = _currentPlaybackEpgProgramme
+
+    private var routeAttemptOrder = emptyList<Int>()
+    private var routeAttemptCursor = 0
+    private var routeStartedAt = 0L
+    private var lastFailureHandledUrl: String? = null
 
     private var _isTempChannelScreenVisible by mutableStateOf(false)
     var isTempChannelScreenVisible
@@ -125,7 +132,7 @@ class MainContentState(
                 val receiver = object : BroadcastReceiver() {
                     override fun onReceive(ctx: Context, intent: Intent) {
                         if (intent.action == "top.yogiczy.mytv.tv.RESTART_PLAY") {
-                            changeCurrentChannel(_currentChannel, _currentChannelUrlIdx, _currentPlaybackEpgProgramme)
+                            prepareCurrentRoute()
                         }
                     }
                 }
@@ -141,8 +148,13 @@ class MainContentState(
             }
         }
 
-        videoPlayerState.onReady {
-            settingsViewModel.iptvPlayableHostList += getUrlHost(_currentChannel.urlList[_currentChannelUrlIdx])
+        videoPlayerState.onFirstFrame {
+            val route = currentRouteOrNull() ?: return@onFirstFrame
+            IptvRouteHealthStore.markSuccess(
+                route.url,
+                System.currentTimeMillis() - routeStartedAt,
+            )
+            settingsViewModel.iptvPlayableHostList += getUrlHost(route.url)
             coroutineScope.launch {
                 val name = _currentChannel.name
                 val urlIdx = _currentChannelUrlIdx
@@ -156,27 +168,27 @@ class MainContentState(
         }
 
         videoPlayerState.onError {
+            val failedRoute = currentRouteOrNull() ?: return@onError
+            if (lastFailureHandledUrl == failedRoute.url) return@onError
+            lastFailureHandledUrl = failedRoute.url
+            IptvRouteHealthStore.markFailure(failedRoute.url)
+            settingsViewModel.iptvPlayableHostList -= getUrlHost(failedRoute.url)
+
             if (_currentPlaybackEpgProgramme != null) {
-                // 回放播放錯誤時，切換到直播
-                if (_currentChannelUrlIdx < _currentChannel.urlList.size - 1) {
-                    changeCurrentChannel(_currentChannel, _currentChannelUrlIdx)
-                }
+                // 回放播放錯誤時先返回同一頻道直播，再按線路健康度回退。
+                changeCurrentChannel(_currentChannel, _currentChannelUrlIdx, null)
                 return@onError
             }
 
-            settingsViewModel.iptvPlayableHostList -= getUrlHost(_currentChannel.urlList[_currentChannelUrlIdx])
-
-            if (_currentChannelUrlIdx < _currentChannel.urlList.size - 1) {
-                changeCurrentChannel(_currentChannel, _currentChannelUrlIdx + 1)
-            }
+            playNextRoute()
         }
 
         videoPlayerState.onInterrupt {
-            changeCurrentChannel(
-                _currentChannel,
-                _currentChannelUrlIdx,
-                _currentPlaybackEpgProgramme
-            )
+            currentRouteOrNull()?.let {
+                IptvRouteHealthStore.markFailure(it.url)
+                settingsViewModel.iptvPlayableHostList -= getUrlHost(it.url)
+            }
+            if (!playNextRoute()) prepareCurrentRoute()
         }
     }
 
@@ -242,6 +254,7 @@ class MainContentState(
     }
 
     private fun getUrlIdx(urlList: List<String>, urlIdx: Int? = null): Int {
+        if (urlList.isEmpty()) return 0
         val idx = if (urlIdx == null) settingsViewModel.getIptvChannelUrlIdx(_currentChannel.name)
 //            urlList.indexOfFirst {
 //            settingsViewModel.iptvPlayableHostList.contains(getUrlHost(it))
@@ -251,47 +264,83 @@ class MainContentState(
         return max(0, min(idx, urlList.size - 1))
     }
 
+    private fun currentRouteOrNull(): ChannelRoute? =
+        _currentChannel.routes.getOrNull(_currentChannelUrlIdx)
+
+    private fun buildRouteAttemptOrder(
+        channel: Channel,
+        requestedIndex: Int?,
+    ): List<Int> {
+        if (channel.routes.isEmpty()) return emptyList()
+        val remembered = getUrlIdx(channel.urlList, requestedIndex)
+        val ranked = IptvRouteHealthStore.rankedIndices(channel.routes, remembered)
+
+        // 明確手動揀線時先尊重該線；自動換台則固定畫質優先（4K > 1080p）。
+        return if (requestedIndex != null) {
+            listOf(remembered) + ranked.filterNot { it == remembered }
+        } else {
+            ranked
+        }
+    }
+
+    private fun prepareCurrentRoute() {
+        val baseRoute = currentRouteOrNull() ?: return
+        var route = baseRoute
+
+        _currentPlaybackEpgProgramme?.let { programme ->
+            val timeFormat = SimpleDateFormat("yyyyMMddHHmmss", Locale.getDefault())
+            val query = "playseek=${timeFormat.format(programme.startAt)}-${timeFormat.format(programme.endAt)}"
+            val playbackUrl = if (URI(baseRoute.url).query.isNullOrBlank()) {
+                "${baseRoute.url}?$query"
+            } else {
+                "${baseRoute.url}&$query"
+            }
+            route = baseRoute.copy(url = playbackUrl)
+        }
+
+        _isTempChannelScreenVisible = true
+        routeStartedAt = System.currentTimeMillis()
+        lastFailureHandledUrl = null
+        log.d(
+            "播放${_currentChannel.name}（${baseRoute.quality.label}，自動線路${_currentChannelUrlIdx + 1}/${_currentChannel.routes.size}）: ${route.url}"
+        )
+
+        if (ChannelUtil.isHybridWebViewUrl(route.url)) {
+            videoPlayerState.stop()
+        } else {
+            videoPlayerState.prepare(route)
+        }
+    }
+
+    private fun playNextRoute(): Boolean {
+        if (routeAttemptCursor + 1 >= routeAttemptOrder.size) return false
+        routeAttemptCursor += 1
+        _currentChannelUrlIdx = routeAttemptOrder[routeAttemptCursor]
+        prepareCurrentRoute()
+        return true
+    }
+
     fun changeCurrentChannel(
         channel: Channel,
         urlIdx: Int? = null,
         playbackEpgProgramme: EpgProgramme? = null,
     ) {
-        if (channel == _currentChannel && urlIdx == _currentChannelUrlIdx && playbackEpgProgramme == _currentPlaybackEpgProgramme) return
-
-        if (channel == _currentChannel && urlIdx != _currentChannelUrlIdx) {
-            settingsViewModel.iptvPlayableHostList -= getUrlHost(_currentChannel.urlList[_currentChannelUrlIdx])
-        }
-
-        _isTempChannelScreenVisible = true
+        if (channel.routes.isEmpty()) return
+        if (
+            channel == _currentChannel &&
+            urlIdx != null &&
+            getUrlIdx(channel.urlList, urlIdx) == _currentChannelUrlIdx &&
+            playbackEpgProgramme == _currentPlaybackEpgProgramme
+        ) return
 
         _currentChannel = channel
         settingsViewModel.iptvLastChannelIdx =
             channelGroupListProvider().channelIdx(_currentChannel)
-
-        _currentChannelUrlIdx = getUrlIdx(_currentChannel.urlList, urlIdx)
-
         _currentPlaybackEpgProgramme = playbackEpgProgramme
-
-        var url = _currentChannel.urlList[_currentChannelUrlIdx]
-        if (_currentPlaybackEpgProgramme != null) {
-            val timeFormat = SimpleDateFormat("yyyyMMddHHmmss", Locale.getDefault())
-            val query = listOf(
-                "playseek=",
-                timeFormat.format(_currentPlaybackEpgProgramme!!.startAt),
-                "-",
-                timeFormat.format(_currentPlaybackEpgProgramme!!.endAt),
-            ).joinToString("")
-            url = if (URI(url).query.isNullOrBlank()) "$url?$query" else "$url&$query"
-//            url = ChannelUtil.urlToCanPlayback(url) //電信RTSP不需要替換
-        }
-
-        log.d("播放${_currentChannel.name}（${_currentChannelUrlIdx + 1}/${_currentChannel.urlList.size}）: $url")
-
-        if (ChannelUtil.isHybridWebViewUrl(url)) {
-            videoPlayerState.stop()
-        } else {
-            videoPlayerState.prepare(url)
-        }
+        routeAttemptOrder = buildRouteAttemptOrder(channel, urlIdx)
+        routeAttemptCursor = 0
+        _currentChannelUrlIdx = routeAttemptOrder.firstOrNull() ?: return
+        prepareCurrentRoute()
     }
 
     fun changeCurrentChannelToPrev() {
@@ -300,6 +349,10 @@ class MainContentState(
 
     fun changeCurrentChannelToNext() {
         changeCurrentChannel(getNextChannel())
+    }
+
+    fun refreshCurrentChannel() {
+        prepareCurrentRoute()
     }
 
     fun favoriteChannelOrNot(channel: Channel) {

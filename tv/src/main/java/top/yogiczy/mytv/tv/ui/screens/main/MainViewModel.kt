@@ -18,6 +18,7 @@ import kotlinx.coroutines.withContext
 import top.yogiczy.mytv.core.data.entities.channel.ChannelGroupList
 import top.yogiczy.mytv.core.data.entities.channel.ChannelGroupList.Companion.channelList
 import top.yogiczy.mytv.core.data.entities.channel.ChannelList
+import top.yogiczy.mytv.core.data.entities.channel.ChannelRoute
 import top.yogiczy.mytv.core.data.entities.epg.EpgList
 import top.yogiczy.mytv.core.data.repositories.epg.EpgRepository
 import top.yogiczy.mytv.core.data.repositories.iptv.IptvRepository
@@ -100,8 +101,9 @@ class MainViewModel : ViewModel() {
                     ChannelGroupList(channelGroupList.map { group ->
                         group.copy(channelList = ChannelList(group.channelList.map { channel ->
                             channel.copy(
-                                urlList = channel.urlList.plus(
-                                    ChannelUtil.getHybridWebViewUrl(channel.name) ?: emptyList()
+                                routes = channel.routes.plus(
+                                    (ChannelUtil.getHybridWebViewUrl(channel.name) ?: emptyList())
+                                        .mapIndexed { index, url -> ChannelRoute(url, sourceOrder = channel.routes.size + index) }
                                 )
                             )
                         }))
@@ -112,9 +114,9 @@ class MainViewModel : ViewModel() {
                     ChannelGroupList(channelGroupList.map { group ->
                         group.copy(channelList = ChannelList(group.channelList.map { channel ->
                             channel.copy(
-                                urlList = (ChannelUtil.getHybridWebViewUrl(channel.name)
-                                    ?: emptyList())
-                                    .plus(channel.urlList)
+                                routes = (ChannelUtil.getHybridWebViewUrl(channel.name) ?: emptyList())
+                                    .mapIndexed { index, url -> ChannelRoute(url, sourceOrder = index) }
+                                    .plus(channel.routes)
                             )
                         }))
                     })

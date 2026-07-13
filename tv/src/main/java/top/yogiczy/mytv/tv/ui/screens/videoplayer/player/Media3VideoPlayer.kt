@@ -1,6 +1,8 @@
 package top.yogiczy.mytv.tv.ui.screens.videoplayer.player
 
 import android.content.Context
+import android.graphics.Color as AndroidColor
+import android.graphics.PorterDuff
 import android.net.Uri
 import android.view.SurfaceView
 import android.view.TextureView
@@ -28,6 +30,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import top.yogiczy.mytv.core.data.entities.channel.ChannelRoute
 import top.yogiczy.mytv.core.data.utils.Logger
 import top.yogiczy.mytv.tv.ui.utils.Configs
 
@@ -52,25 +55,35 @@ class Media3VideoPlayer(
             .build()
             .apply { playWhenReady = true }
     }
-    private val dataSourceFactory by lazy {
+    private fun dataSourceFactory(route: ChannelRoute) =
         DefaultDataSource.Factory(
             context,
             DefaultHttpDataSource.Factory().apply {
                 setUserAgent(Configs.videoPlayerUserAgent)
+                if (route.requestHeaders.isNotEmpty()) {
+                    setDefaultRequestProperties(route.requestHeaders)
+                }
                 setConnectTimeoutMs(Configs.videoPlayerLoadTimeout.toInt())
                 setReadTimeoutMs(Configs.videoPlayerLoadTimeout.toInt())
                 setKeepPostFor302Redirects(true)
                 setAllowCrossProtocolRedirects(true)
             },
         )
-    }
 
     private val contentTypeAttempts = mutableMapOf<Int, Boolean>()
     private var updatePositionJob: Job? = null
+    private var currentRoute: ChannelRoute? = null
+    private var currentSurfaceView: SurfaceView? = null
+    private var currentTextureView: TextureView? = null
 
 
-    private fun getMediaSource(uri: Uri, contentType: Int? = null): MediaSource? {
+    private fun getMediaSource(
+        uri: Uri,
+        route: ChannelRoute,
+        contentType: Int? = null,
+    ): MediaSource? {
         val mediaItem = MediaItem.fromUri(uri)
+        val dataSourceFactory = dataSourceFactory(route)
 
         if (uri.toString().startsWith("rtp://")) {
             return RtspMediaSource.Factory().createMediaSource(mediaItem)
@@ -100,12 +113,20 @@ class Media3VideoPlayer(
         }
     }
 
-    private fun prepare(uri: Uri, contentType: Int? = null) {
-        val mediaSource = getMediaSource(uri, contentType)
+    private fun prepareInternal(route: ChannelRoute, contentType: Int? = null) {
+        currentRoute = route
+        val uri = Uri.parse(route.url.let { if (it.endsWith("?")) "${it}t" else it })
+        val mediaSource = getMediaSource(uri, route, contentType)
 
         if (mediaSource != null) {
             contentTypeAttempts[contentType ?: Util.inferContentType(uri)] = true
+            videoPlayer.clearVideoSurface()
+            clearVideoOutput()
+            videoPlayer.stop()
+            videoPlayer.clearMediaItems()
             videoPlayer.setMediaSource(mediaSource)
+            currentSurfaceView?.let(videoPlayer::setVideoSurfaceView)
+            currentTextureView?.let(videoPlayer::setVideoTextureView)
             videoPlayer.prepare()
             videoPlayer.play()
             triggerPrepared()
@@ -135,11 +156,11 @@ class Media3VideoPlayer(
                 androidx.media3.common.PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED -> {
                     videoPlayer.currentMediaItem?.localConfiguration?.uri?.let {
                         if (contentTypeAttempts[C.CONTENT_TYPE_HLS] != true) {
-                            prepare(it, C.CONTENT_TYPE_HLS)
+                            currentRoute?.let { route -> prepareInternal(route, C.CONTENT_TYPE_HLS) }
                         } else if (contentTypeAttempts[C.CONTENT_TYPE_RTSP] != true) {
-                            prepare(it, C.CONTENT_TYPE_RTSP)
+                            currentRoute?.let { route -> prepareInternal(route, C.CONTENT_TYPE_RTSP) }
                         } else if (contentTypeAttempts[C.CONTENT_TYPE_OTHER] != true) {
-                            prepare(it, C.CONTENT_TYPE_OTHER)
+                            currentRoute?.let { route -> prepareInternal(route, C.CONTENT_TYPE_OTHER) }
                         } else {
                             val type = Util.inferContentType(it)
                             triggerError(
@@ -186,6 +207,10 @@ class Media3VideoPlayer(
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             triggerIsPlayingChanged(isPlaying)
+        }
+
+        override fun onRenderedFirstFrame() {
+            triggerFirstFrame()
         }
     }
 
@@ -258,11 +283,9 @@ class Media3VideoPlayer(
         super.release()
     }
 
-    override fun prepare(url: String) {
+    override fun prepare(route: ChannelRoute) {
         contentTypeAttempts.clear()
-        prepare(Uri.parse(url.let {
-            if (url.endsWith("?")) "${it}t" else it
-        }))
+        prepareInternal(route)
     }
 
     override fun play() {
@@ -284,11 +307,34 @@ class Media3VideoPlayer(
     }
 
     override fun setVideoSurfaceView(surfaceView: SurfaceView) {
+        currentSurfaceView = surfaceView
+        currentTextureView = null
         videoPlayer.setVideoSurfaceView(surfaceView)
     }
 
     override fun setVideoTextureView(textureView: TextureView) {
-//        TODO("Not yet implemented")
+        currentTextureView = textureView
+        currentSurfaceView = null
         videoPlayer.setVideoTextureView(textureView)
+    }
+
+    private fun clearVideoOutput() {
+        currentSurfaceView?.holder?.surface?.takeIf { it.isValid }?.let { surface ->
+            val canvas = runCatching { surface.lockCanvas(null) }.getOrNull() ?: return@let
+            try {
+                canvas.drawColor(AndroidColor.BLACK, PorterDuff.Mode.SRC)
+            } finally {
+                runCatching { surface.unlockCanvasAndPost(canvas) }
+            }
+        }
+
+        currentTextureView?.takeIf(TextureView::isAvailable)?.let { textureView ->
+            val canvas = runCatching { textureView.lockCanvas() }.getOrNull() ?: return@let
+            try {
+                canvas.drawColor(AndroidColor.BLACK, PorterDuff.Mode.SRC)
+            } finally {
+                runCatching { textureView.unlockCanvasAndPost(canvas) }
+            }
+        }
     }
 }

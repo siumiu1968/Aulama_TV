@@ -31,6 +31,7 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import kotlinx.coroutines.delay
 import top.yogiczy.mytv.core.data.entities.channel.Channel
+import top.yogiczy.mytv.core.data.entities.channel.ChannelRoute
 import top.yogiczy.mytv.core.data.entities.epg.EpgProgramme
 import top.yogiczy.mytv.core.data.entities.epg.EpgProgramme.Companion.progress
 import top.yogiczy.mytv.core.data.entities.epg.EpgProgramme.Companion.remainingMinutes
@@ -118,6 +119,7 @@ private fun ChannelInfoTags(
     val channel = channelProvider()
     val channelLineIdx = channelLineIdxProvider()
     val line = channel.urlList[channelLineIdx]
+    val route = channel.routes.getOrNull(channelLineIdx)
     val isInTimeShift = isInTimeShiftProvider()
     val currentPlaybackEpgProgramme = currentPlaybackEpgProgrammeProvider()
     val playerMetadata = playerMetadataProvider()
@@ -139,8 +141,10 @@ private fun ChannelInfoTags(
             Tag("回放", colors = tagColors)
         }
 
-        if (channel.urlList.size > 1) {
-            Tag("${channelLineIdx + 1}/${channel.urlList.size}", colors = tagColors)
+        route?.let { Tag(it.quality.label, colors = tagColors) }
+
+        if (channel.routes.size > 1) {
+            Tag("自動選線", colors = tagColors)
         }
 
         if (ChannelUtil.isHybridWebViewUrl(line)) {
@@ -419,7 +423,8 @@ private fun ChannelInfoPreview() {
             ChannelInfo(
                 channelProvider = {
                     Channel.EXAMPLE.copy(
-                        urlList = ChannelUtil.getHybridWebViewUrl("cctv1") ?: emptyList()
+                        routes = (ChannelUtil.getHybridWebViewUrl("cctv1") ?: emptyList())
+                            .map(::ChannelRoute)
                     )
                 },
                 channelUrlIdxProvider = { 0 },
