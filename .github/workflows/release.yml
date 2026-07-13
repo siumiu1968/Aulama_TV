@@ -10,6 +10,9 @@ on:
         description: 'Tag to release (e.g. v1.2.3)'
         required: true
 
+permissions:
+  contents: write
+
 jobs:
   build_apk:
     runs-on: ubuntu-latest
