@@ -23,15 +23,15 @@ val AulamaTvPink = Color(0xFFFF4C9A)
 @Composable
 fun Modifier.aulamaFrostedPanel(
     shape: Shape = RoundedCornerShape(18.dp),
-    opacity: Float = 0.84f,
+    opacity: Float = 0.70f,
     borderWidth: Dp = 1.dp,
 ): Modifier = this
     .background(
         brush = Brush.linearGradient(
             colors = listOf(
                 Color(0xFF071726).copy(alpha = opacity),
-                Color(0xFF0B1B2A).copy(alpha = (opacity - 0.04f).coerceAtLeast(0f)),
-                Color(0xFF151426).copy(alpha = (opacity - 0.08f).coerceAtLeast(0f)),
+                Color(0xFF0B1B2A).copy(alpha = (opacity - 0.06f).coerceAtLeast(0f)),
+                Color(0xFF151426).copy(alpha = (opacity - 0.12f).coerceAtLeast(0f)),
             ),
         ),
         shape = shape,
@@ -40,9 +40,9 @@ fun Modifier.aulamaFrostedPanel(
         width = borderWidth,
         brush = Brush.linearGradient(
             listOf(
-                Color.White.copy(alpha = 0.34f),
-                AulamaTvCyan.copy(alpha = 0.42f),
-                AulamaTvPink.copy(alpha = 0.22f),
+                Color.White.copy(alpha = 0.24f),
+                AulamaTvCyan.copy(alpha = 0.30f),
+                AulamaTvPink.copy(alpha = 0.16f),
             )
         ),
         shape = shape,

@@ -2,6 +2,7 @@ package top.yogiczy.mytv.tv.ui.utils
 
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
+import top.yogiczy.mytv.core.data.entities.channel.ChannelQuality
 import top.yogiczy.mytv.core.data.entities.channel.ChannelRoute
 import top.yogiczy.mytv.core.data.utils.SP
 import kotlin.math.roundToLong
@@ -34,8 +35,12 @@ object IptvRouteHealthStore {
         now: Long = System.currentTimeMillis(),
     ): List<Int> {
         val health = read()
+        val smooth4k = IptvPlaybackCapabilities.supportsSmooth4kHevc
         return routes.indices.sortedWith(
             compareBy<Int> { index -> if (isCoolingDown(health[routes[index].url], now)) 1 else 0 }
+                .thenBy { index ->
+                    if (routes[index].quality == ChannelQuality.UHD_4K && !smooth4k) 1 else 0
+                }
                 .thenByDescending { index -> routes[index].quality.rank }
                 .thenBy { index -> routeCost(health[routes[index].url], index == preferredIndex, now) }
                 .thenBy { index -> routes[index].sourceOrder }

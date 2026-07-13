@@ -18,6 +18,9 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import top.yogiczy.mytv.core.data.entities.channel.ChannelRoute
 import top.yogiczy.mytv.tv.ui.screens.settings.SettingsViewModel
 import top.yogiczy.mytv.tv.ui.screens.videoplayer.player.Media3VideoPlayer
@@ -37,6 +40,10 @@ class VideoPlayerState(
     private var currentRoute: ChannelRoute? = null
     private var currentSurface: Any? = null
     private var currentTexture: Any? = null
+    private var playbackGeneration = 0
+    private var bufferingHealthJob: Job? = null
+    private var degradedReported = false
+    private val recentRebuffers = mutableListOf<Long>()
     /** 顯示模式 */
     var displayMode by mutableStateOf(defaultDisplayModeProvider())
 
@@ -66,6 +73,10 @@ class VideoPlayerState(
     var metadata by mutableStateOf(VideoPlayer.Metadata())
 
     fun prepare(route: ChannelRoute) {
+        playbackGeneration += 1
+        bufferingHealthJob?.cancel()
+        recentRebuffers.clear()
+        degradedReported = false
         currentRoute = route
         error = null
         hasRenderedFirstFrame = false
@@ -86,6 +97,9 @@ class VideoPlayerState(
     }
 
     fun stop() {
+        playbackGeneration += 1
+        bufferingHealthJob?.cancel()
+        recentRebuffers.clear()
         hasRenderedFirstFrame = false
         isBuffering = false
         instance.stop()
@@ -105,6 +119,7 @@ class VideoPlayerState(
     private val onFirstFrameListeners = mutableListOf<() -> Unit>()
     private val onErrorListeners = mutableListOf<() -> Unit>()
     private val onInterruptListeners = mutableListOf<() -> Unit>()
+    private val onPlaybackDegradedListeners = mutableListOf<(String) -> Unit>()
 
     fun onReady(listener: () -> Unit) {
         onReadyListeners.add(listener)
@@ -120,6 +135,17 @@ class VideoPlayerState(
 
     fun onInterrupt(listener: () -> Unit) {
         onInterruptListeners.add(listener)
+    }
+
+    fun onPlaybackDegraded(listener: (String) -> Unit) {
+        onPlaybackDegradedListeners.add(listener)
+    }
+
+    private fun reportPlaybackDegraded(reason: String) {
+        if (degradedReported || !hasRenderedFirstFrame) return
+        degradedReported = true
+        bufferingHealthJob?.cancel()
+        onPlaybackDegradedListeners.forEach { it(reason) }
     }
 
 
@@ -174,6 +200,23 @@ class VideoPlayerState(
         instance.onBuffering {
             isBuffering = it
             if (it) error = null
+            bufferingHealthJob?.cancel()
+            if (it && hasRenderedFirstFrame && !degradedReported) {
+                val now = System.currentTimeMillis()
+                recentRebuffers.removeAll { sample -> now - sample > 25_000L }
+                recentRebuffers += now
+                if (recentRebuffers.size >= 2) {
+                    reportPlaybackDegraded("repeated-rebuffer")
+                } else {
+                    val generation = playbackGeneration
+                    bufferingHealthJob = coroutineScope.launch {
+                        delay(3_200L)
+                        if (generation == playbackGeneration && isBuffering) {
+                            reportPlaybackDegraded("long-rebuffer")
+                        }
+                    }
+                }
+            }
         }
         instance.onPrepared { }
         instance.onFirstFrame {
@@ -186,12 +229,15 @@ class VideoPlayerState(
         instance.onCurrentPositionChanged { currentPosition = it }
         instance.onMetadata { metadata = it }
         instance.onInterrupt { onInterruptListeners.forEach { it.invoke() } }
+        instance.onPlaybackDegraded(::reportPlaybackDegraded)
     }
 
     fun release() {
         onReadyListeners.clear()
         onFirstFrameListeners.clear()
         onErrorListeners.clear()
+        onPlaybackDegradedListeners.clear()
+        bufferingHealthJob?.cancel()
         instance.release()
     }
 }
@@ -205,8 +251,12 @@ fun rememberVideoPlayerState(
     val lifecycleOwner = LocalLifecycleOwner.current
     val coroutineScope = rememberCoroutineScope()
     val state = remember {
+        val player = when (Configs.videoPlayerType) {
+            Configs.VideoPlayerType.IJK -> IJKVideoPlayer(context, coroutineScope)
+            Configs.VideoPlayerType.MEDIA3 -> Media3VideoPlayer(context, coroutineScope)
+        }
         VideoPlayerState(
-            IJKVideoPlayer(context, coroutineScope),
+            player,
             settingsViewModel,
             context,
             coroutineScope,

@@ -2,7 +2,6 @@ package top.yogiczy.mytv.tv.ui.screens.quickop
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -63,6 +62,7 @@ import top.yogiczy.mytv.tv.ui.screens.quickop.components.QuickOpBtnList
 import top.yogiczy.mytv.tv.ui.screens.settings.SettingsViewModel
 import top.yogiczy.mytv.tv.ui.screens.videoplayer.player.VideoPlayer
 import top.yogiczy.mytv.tv.ui.theme.MyTVTheme
+import top.yogiczy.mytv.tv.ui.theme.aulamaFrostedPanel
 import top.yogiczy.mytv.tv.ui.theme.colors
 import top.yogiczy.mytv.tv.ui.tooling.PreviewWithLayoutGrids
 import top.yogiczy.mytv.tv.ui.utils.captureBackKey
@@ -97,9 +97,9 @@ fun QuickOpScreen(
             .background(
                 Brush.verticalGradient(
                     listOf(
-                        Color.Black.copy(alpha = 0.2f),
-                        Color.Black.copy(alpha = 0.52f),
-                        Color.Black.copy(alpha = 0.9f),
+                        Color.Black.copy(alpha = 0.04f),
+                        Color.Black.copy(alpha = 0.16f),
+                        Color.Black.copy(alpha = 0.48f),
                     ),
                 ),
             ),
@@ -151,15 +151,7 @@ private fun QuickOpScreenTop(
 
         Row(
             modifier = Modifier
-                .background(
-                    MaterialTheme.colors.surfaceContainerLow.copy(alpha = 0.88f),
-                    RoundedCornerShape(18.dp),
-                )
-                .border(
-                    1.dp,
-                    MaterialTheme.colorScheme.borderVariant.copy(alpha = 0.72f),
-                    RoundedCornerShape(18.dp),
-                )
+                .aulamaFrostedPanel(RoundedCornerShape(18.dp), opacity = 0.64f)
                 .padding(horizontal = 16.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -206,7 +198,7 @@ fun QuickOpScreeIptvSource(
                 },
             ),
         colors = ClickableSurfaceDefaults.colors(
-            containerColor = MaterialTheme.colors.surfaceContainerLow.copy(alpha = 0.88f),
+            containerColor = MaterialTheme.colors.surfaceContainerLow.copy(alpha = 0.64f),
             contentColor = MaterialTheme.colorScheme.onSurface,
             focusedContainerColor = MaterialTheme.colorScheme.primaryContainer,
             focusedContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -292,15 +284,7 @@ private fun QuickOpScreenBottom(
                 modifier = Modifier
                     .padding(start = childPadding.start, end = childPadding.end)
                     .fillMaxWidth(0.68f)
-                    .background(
-                        MaterialTheme.colors.surfaceContainerLow.copy(alpha = 0.88f),
-                        RoundedCornerShape(18.dp),
-                    )
-                    .border(
-                        1.dp,
-                        MaterialTheme.colorScheme.borderVariant.copy(alpha = 0.68f),
-                        RoundedCornerShape(18.dp),
-                    )
+                    .aulamaFrostedPanel(RoundedCornerShape(18.dp), opacity = 0.64f)
                     .padding(horizontal = 20.dp, vertical = 14.dp),
                 channelProvider = currentChannelProvider,
                 channelUrlIdxProvider = currentChannelUrlIdxProvider,

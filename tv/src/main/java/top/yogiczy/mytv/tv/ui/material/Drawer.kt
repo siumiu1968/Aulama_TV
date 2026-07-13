@@ -1,7 +1,6 @@
 package top.yogiczy.mytv.tv.ui.material
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,7 +12,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -21,6 +19,7 @@ import androidx.tv.material3.LocalTextStyle
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import top.yogiczy.mytv.tv.ui.theme.MyTVTheme
+import top.yogiczy.mytv.tv.ui.theme.aulamaFrostedPanel
 import top.yogiczy.mytv.tv.ui.theme.colors
 import top.yogiczy.mytv.tv.ui.tooling.PreviewWithLayoutGrids
 
@@ -52,7 +51,7 @@ fun Drawer(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.58f))
+            .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.28f))
             .padding(28.dp)
             .pointerInput(Unit) { detectTapGestures { onDismissRequest?.invoke() } },
     ) {
@@ -61,20 +60,7 @@ fun Drawer(
             modifier = Modifier
                 .align(alignment)
                 .then(positionModifier)
-                .background(
-                    brush = Brush.linearGradient(
-                        colors = listOf(
-                            MaterialTheme.colors.surfaceContainerHigh.copy(alpha = 0.98f),
-                            MaterialTheme.colors.surfaceContainer.copy(alpha = 0.98f),
-                        ),
-                    ),
-                    shape = drawerShape,
-                )
-                .border(
-                    width = 1.dp,
-                    color = MaterialTheme.colorScheme.borderVariant.copy(alpha = 0.7f),
-                    shape = drawerShape,
-                )
+                .aulamaFrostedPanel(shape = drawerShape, opacity = 0.70f)
                 .padding(22.dp)
         ) {
             Column {

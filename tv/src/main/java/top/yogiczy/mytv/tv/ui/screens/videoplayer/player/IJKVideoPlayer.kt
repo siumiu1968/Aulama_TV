@@ -13,6 +13,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import top.yogiczy.mytv.core.data.entities.channel.ChannelQuality
 import top.yogiczy.mytv.core.data.entities.channel.ChannelRoute
 import tv.danmaku.ijk.media.player.IMediaPlayer
 import tv.danmaku.ijk.media.player.IjkMediaPlayer
@@ -50,6 +51,7 @@ class IJKVideoPlayer(
 
     private fun setOption() {
         ijkPlayer.apply {
+            val highBandwidth = currentRoute?.quality == ChannelQuality.UHD_4K
             setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "allowed_extensions", "ALL")
             if (Configs.videoPlayerForceSoftDecode)
                 setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "mediacodec", 0)
@@ -70,11 +72,15 @@ class IJKVideoPlayer(
             setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "rtsp_transport", "tcp")
             setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "rtsp_flags", "prefer_tcp")
             setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "buffer_size", 1316)
-            setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "infbuf", 1)  // 無限讀
+            setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "infbuf", if (highBandwidth) 0 else 1)
             setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "flush_packets", 1L)
 
-            //  關閉播放器緩衝，這個必須關閉，否則會出現播放一段時間後，一直卡住，控制枱打印 FFP_MSG_BUFFERING_START
-            setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "packet-buffering", 0)
+            // 高碼率 4K 要保留短緩衝吸收網絡抖動；一般直播維持低延遲。
+            setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "packet-buffering", if (highBandwidth) 1 else 0)
+            if (highBandwidth) {
+                setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "max_cached_duration", 8_000)
+                setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "min-frames", 120)
+            }
 
             //https://www.cnblogs.com/Fitz/p/18537127
             // setOption(IjkMediaPlayer.OPT_CATEGORY_CODEC, "skip_loop_filter",0) //丟棄一些“無用”的數據包，例如AVI格式中的零大小數據包
@@ -83,6 +89,38 @@ class IJKVideoPlayer(
     }
     
     private var updatePositionJob: Job? = null
+    private var playbackHealthJob: Job? = null
+    private var playbackHealthReported = false
+
+    private fun startPlaybackHealthMonitor() {
+        playbackHealthJob?.cancel()
+        playbackHealthReported = false
+        playbackHealthJob = coroutineScope.launch {
+            delay(5_000L)
+            var previousPosition = ijkPlayer.currentPosition
+            var badSamples = 0
+            while (!playbackHealthReported) {
+                delay(3_000L)
+                if (!ijkPlayer.isPlaying) {
+                    badSamples = 0
+                    continue
+                }
+                val outputFps = ijkPlayer.videoOutputFramesPerSecond
+                val decodeFps = ijkPlayer.videoDecodeFramesPerSecond
+                val position = ijkPlayer.currentPosition
+                val progressDelta = (position - previousPosition).coerceAtLeast(0L)
+                val minimumFps = if (currentRoute?.quality == ChannelQuality.UHD_4K) 16f else 8f
+                val unhealthy = (outputFps.isFinite() && outputFps > 0f && outputFps < minimumFps) ||
+                    (decodeFps.isFinite() && decodeFps > 0f && decodeFps < minimumFps && progressDelta < 1_500L)
+                badSamples = if (unhealthy) badSamples + 1 else 0
+                previousPosition = position
+                if (badSamples >= 2) {
+                    playbackHealthReported = true
+                    triggerPlaybackDegraded("low-output-fps")
+                }
+            }
+        }
+    }
     
     private val playerListener = object : IMediaPlayer.OnPreparedListener,
         IMediaPlayer.OnInfoListener,
@@ -111,6 +149,7 @@ class IJKVideoPlayer(
                     retryCount = 0
                     triggerFirstFrame()
                     triggerIsPlayingChanged(true)
+                    startPlaybackHealthMonitor()
                 }
             }
             return true
@@ -159,12 +198,15 @@ class IJKVideoPlayer(
 
     override fun release() {
         updatePositionJob?.cancel()
+        playbackHealthJob?.cancel()
         ijkPlayer.reset()
         ijkPlayer.release()
         super.release()
     }
 
     override fun prepare(route: ChannelRoute) {
+        playbackHealthJob?.cancel()
+        playbackHealthReported = false
         val isNewRoute = currentRoute?.url != route.url
         currentRoute = route
         if (isNewRoute) retryCount = 0
@@ -225,6 +267,7 @@ class IJKVideoPlayer(
 
     override fun stop() {
         updatePositionJob?.cancel()
+        playbackHealthJob?.cancel()
         ijkPlayer.stop()
         super.stop()
     }

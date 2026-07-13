@@ -36,7 +36,7 @@ fun QuickOpBtn(
         onClick = {},
         shape = ButtonDefaults.shape(shape = buttonShape),
         colors = ButtonDefaults.colors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.76f),
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.60f),
             contentColor = MaterialTheme.colorScheme.onSurface,
             focusedContainerColor = MaterialTheme.colorScheme.primaryContainer,
             focusedContentColor = MaterialTheme.colorScheme.onPrimaryContainer,

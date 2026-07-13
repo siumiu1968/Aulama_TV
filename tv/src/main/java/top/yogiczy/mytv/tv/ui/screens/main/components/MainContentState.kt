@@ -167,6 +167,24 @@ class MainContentState(
             }
         }
 
+        videoPlayerState.onPlaybackDegraded { reason ->
+            val failedRoute = currentRouteOrNull() ?: return@onPlaybackDegraded
+            if (lastFailureHandledUrl == failedRoute.url) return@onPlaybackDegraded
+            lastFailureHandledUrl = failedRoute.url
+            IptvRouteHealthStore.markFailure(failedRoute.url)
+            settingsViewModel.iptvPlayableHostList -= getUrlHost(failedRoute.url)
+
+            if (playNextRoute()) {
+                val nextRoute = currentRouteOrNull()
+                val target = nextRoute?.quality?.label ?: "後備"
+                Snackbar.show("畫面播放唔順，已自動切換${target}線路")
+                log.w("線路播放質素下降（$reason），自動切換：${failedRoute.url}")
+            } else {
+                Snackbar.show("目前線路播放唔順，暫時冇其他可用線路")
+                log.w("線路播放質素下降（$reason），但冇後備線路：${failedRoute.url}")
+            }
+        }
+
         videoPlayerState.onError {
             val failedRoute = currentRouteOrNull() ?: return@onError
             if (lastFailureHandledUrl == failedRoute.url) return@onError

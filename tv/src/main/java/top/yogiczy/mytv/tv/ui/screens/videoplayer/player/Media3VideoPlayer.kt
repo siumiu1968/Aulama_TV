@@ -17,6 +17,7 @@ import androidx.media3.common.util.Util
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.DecoderReuseEvaluation
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
@@ -43,15 +44,23 @@ class Media3VideoPlayer(
 
     private val videoPlayer by lazy {
         val renderersFactory = DefaultRenderersFactory(context)
+            .setEnableDecoderFallback(true)
+            .forceEnableMediaCodecAsynchronousQueueing()
             .setExtensionRendererMode(
                 if (Configs.videoPlayerForceSoftDecode)
                     DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER
                 else DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON
             )
 
+        val loadControl = DefaultLoadControl.Builder()
+            .setBufferDurationsMs(8_000, 35_000, 1_200, 3_000)
+            .setPrioritizeTimeOverSizeThresholds(true)
+            .build()
+
         ExoPlayer
             .Builder(context)
             .setRenderersFactory(renderersFactory)
+            .setLoadControl(loadControl)
             .build()
             .apply { playWhenReady = true }
     }
@@ -72,6 +81,8 @@ class Media3VideoPlayer(
 
     private val contentTypeAttempts = mutableMapOf<Int, Boolean>()
     private var updatePositionJob: Job? = null
+    private var playbackHealthJob: Job? = null
+    private var playbackHealthReported = false
     private var currentRoute: ChannelRoute? = null
     private var currentSurfaceView: SurfaceView? = null
     private var currentTextureView: TextureView? = null
@@ -114,6 +125,8 @@ class Media3VideoPlayer(
     }
 
     private fun prepareInternal(route: ChannelRoute, contentType: Int? = null) {
+        playbackHealthJob?.cancel()
+        playbackHealthReported = false
         currentRoute = route
         val uri = Uri.parse(route.url.let { if (it.endsWith("?")) "${it}t" else it })
         val mediaSource = getMediaSource(uri, route, contentType)
@@ -211,6 +224,48 @@ class Media3VideoPlayer(
 
         override fun onRenderedFirstFrame() {
             triggerFirstFrame()
+            startPlaybackHealthMonitor()
+        }
+    }
+
+    private fun startPlaybackHealthMonitor() {
+        playbackHealthJob?.cancel()
+        playbackHealthJob = coroutineScope.launch {
+            delay(5_000L)
+            val counters = videoPlayer.videoDecoderCounters ?: return@launch
+            counters.ensureUpdated()
+            var previousRendered = counters.renderedOutputBufferCount
+            var previousDropped = counters.droppedBufferCount
+            var previousPosition = videoPlayer.currentPosition
+            var badSamples = 0
+
+            while (!playbackHealthReported) {
+                delay(3_000L)
+                if (!videoPlayer.isPlaying || videoPlayer.playbackState != Player.STATE_READY) {
+                    badSamples = 0
+                    continue
+                }
+                counters.ensureUpdated()
+                val renderedDelta = (counters.renderedOutputBufferCount - previousRendered).coerceAtLeast(0)
+                val droppedDelta = (counters.droppedBufferCount - previousDropped).coerceAtLeast(0)
+                val frameDelta = renderedDelta + droppedDelta
+                val droppedRatio = if (frameDelta > 0) droppedDelta.toFloat() / frameDelta else 0f
+                val progressDelta = (videoPlayer.currentPosition - previousPosition).coerceAtLeast(0L)
+                val unhealthy = (frameDelta >= 20 && droppedRatio >= 0.18f) ||
+                    (renderedDelta < 8 && progressDelta < 1_500L)
+
+                badSamples = if (unhealthy) badSamples + 1 else 0
+                previousRendered = counters.renderedOutputBufferCount
+                previousDropped = counters.droppedBufferCount
+                previousPosition = videoPlayer.currentPosition
+
+                if (badSamples >= 2) {
+                    playbackHealthReported = true
+                    triggerPlaybackDegraded(
+                        if (droppedRatio >= 0.18f) "dropped-frames" else "slow-rendering"
+                    )
+                }
+            }
         }
     }
 
@@ -276,6 +331,7 @@ class Media3VideoPlayer(
     }
 
     override fun release() {
+        playbackHealthJob?.cancel()
         videoPlayer.removeListener(playerListener)
         videoPlayer.removeAnalyticsListener(metadataListener)
         videoPlayer.removeAnalyticsListener(eventLogger)
@@ -301,6 +357,7 @@ class Media3VideoPlayer(
     }
 
     override fun stop() {
+        playbackHealthJob?.cancel()
         videoPlayer.stop()
         updatePositionJob?.cancel()
         super.stop()
