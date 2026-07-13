@@ -51,7 +51,6 @@ class IJKVideoPlayer(
 
     private fun setOption() {
         ijkPlayer.apply {
-            val highBandwidth = currentRoute?.quality == ChannelQuality.UHD_4K
             setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "allowed_extensions", "ALL")
             if (Configs.videoPlayerForceSoftDecode)
                 setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "mediacodec", 0)
@@ -72,15 +71,11 @@ class IJKVideoPlayer(
             setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "rtsp_transport", "tcp")
             setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "rtsp_flags", "prefer_tcp")
             setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "buffer_size", 1316)
-            setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "infbuf", if (highBandwidth) 0 else 1)
+            setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "infbuf", 1)
             setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "flush_packets", 1L)
 
-            // 高碼率 4K 要保留短緩衝吸收網絡抖動；一般直播維持低延遲。
-            setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "packet-buffering", if (highBandwidth) 1 else 0)
-            if (highBandwidth) {
-                setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "max_cached_duration", 8_000)
-                setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "min-frames", 120)
-            }
+            // 直播必須維持無限讀取並關閉播放器封包緩衝，避免播放一段後卡住。
+            setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "packet-buffering", 0)
 
             //https://www.cnblogs.com/Fitz/p/18537127
             // setOption(IjkMediaPlayer.OPT_CATEGORY_CODEC, "skip_loop_filter",0) //丟棄一些“無用”的數據包，例如AVI格式中的零大小數據包

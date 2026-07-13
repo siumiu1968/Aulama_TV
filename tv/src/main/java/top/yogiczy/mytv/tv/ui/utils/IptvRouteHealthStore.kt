@@ -2,7 +2,6 @@ package top.yogiczy.mytv.tv.ui.utils
 
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
-import top.yogiczy.mytv.core.data.entities.channel.ChannelQuality
 import top.yogiczy.mytv.core.data.entities.channel.ChannelRoute
 import top.yogiczy.mytv.core.data.utils.SP
 import kotlin.math.roundToLong
@@ -21,9 +20,9 @@ data class IptvRouteHealth(
  * 畫質先分級（4K > 1080p > 其他），同級先比較本機過往穩定度。
  */
 object IptvRouteHealthStore {
-    private const val key = "IPTV_ROUTE_HEALTH_V1"
+    private const val key = "IPTV_ROUTE_HEALTH_V2"
     private const val shortCooldownMs = 30 * 60 * 1000L
-    private const val longCooldownMs = 6 * 60 * 60 * 1000L
+    private const val longCooldownMs = 2 * 60 * 60 * 1000L
     private const val maxEntries = 250
     private val gson = Gson()
     private val mapType = object : TypeToken<MutableMap<String, IptvRouteHealth>>() {}.type
@@ -35,12 +34,8 @@ object IptvRouteHealthStore {
         now: Long = System.currentTimeMillis(),
     ): List<Int> {
         val health = read()
-        val smooth4k = IptvPlaybackCapabilities.supportsSmooth4kHevc
         return routes.indices.sortedWith(
             compareBy<Int> { index -> if (isCoolingDown(health[routes[index].url], now)) 1 else 0 }
-                .thenBy { index ->
-                    if (routes[index].quality == ChannelQuality.UHD_4K && !smooth4k) 1 else 0
-                }
                 .thenByDescending { index -> routes[index].quality.rank }
                 .thenBy { index -> routeCost(health[routes[index].url], index == preferredIndex, now) }
                 .thenBy { index -> routes[index].sourceOrder }
