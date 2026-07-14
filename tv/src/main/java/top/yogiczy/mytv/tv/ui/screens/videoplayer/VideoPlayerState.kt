@@ -43,6 +43,7 @@ class VideoPlayerState(
     private var playbackGeneration = 0
     private var bufferingHealthJob: Job? = null
     private var degradedReported = false
+    private var isAppForeground = false
     private val recentRebuffers = mutableListOf<Long>()
     /** 顯示模式 */
     var displayMode by mutableStateOf(defaultDisplayModeProvider())
@@ -85,11 +86,17 @@ class VideoPlayerState(
     }
 
     fun play() {
-        instance.play()
+        if (isAppForeground) instance.play()
     }
 
     fun pause() {
         instance.pause()
+    }
+
+    fun setAppForeground(foreground: Boolean) {
+        isAppForeground = foreground
+        instance.setPlaybackAllowed(foreground)
+        if (foreground && currentRoute != null) instance.play()
     }
 
     fun seekTo(position: Long) {
@@ -174,6 +181,7 @@ class VideoPlayerState(
                 
                 // 創建新實例
                 instance = newInstance
+                instance.setPlaybackAllowed(isAppForeground)
                 initialize()
                 
                 // 恢復播放狀態
@@ -224,7 +232,10 @@ class VideoPlayerState(
             isBuffering = false
             onFirstFrameListeners.forEach { it.invoke() }
         }
-        instance.onIsPlayingChanged { isPlaying = it }
+        instance.onIsPlayingChanged { playing ->
+            if (playing && !isAppForeground) instance.pause()
+            isPlaying = playing && isAppForeground
+        }
         instance.onDurationChanged { duration = it }
         instance.onCurrentPositionChanged { currentPosition = it }
         instance.onMetadata { metadata = it }
@@ -270,9 +281,15 @@ fun rememberVideoPlayerState(
     }
 
     DisposableEffect(lifecycleOwner) {
+        state.setAppForeground(lifecycleOwner.lifecycle.currentState == Lifecycle.State.RESUMED)
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) state.play()
-            else if (event == Lifecycle.Event.ON_STOP) state.pause()
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> state.setAppForeground(true)
+                Lifecycle.Event.ON_PAUSE,
+                Lifecycle.Event.ON_STOP,
+                Lifecycle.Event.ON_DESTROY -> state.setAppForeground(false)
+                else -> Unit
+            }
         }
 
         lifecycleOwner.lifecycle.addObserver(observer)

@@ -64,7 +64,7 @@ class IJKVideoPlayer(
             setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "opensles", 0)
             setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "framedrop", 5)
             setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "fast", 1)
-            setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "start-on-prepared", 1)
+            setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "start-on-prepared", 0)
             setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "enable-accurate-seek", 1)
 
             // rtsp設置 https://ffmpeg.org/ffmpeg-protocols.html#rtsp
@@ -125,6 +125,7 @@ class IJKVideoPlayer(
         
         override fun onPrepared(mp: IMediaPlayer?) {
             triggerReady()
+            if (canStartPlayback) play()
             
             updatePositionJob?.cancel()
             updatePositionJob = coroutineScope.launch {
@@ -235,7 +236,7 @@ class IJKVideoPlayer(
     }
 
     override fun play() {
-        if (!ijkPlayer.isPlaying) {
+        if (canStartPlayback && !ijkPlayer.isPlaying) {
             ijkPlayer.start()
             triggerIsPlayingChanged(true)
         }
@@ -285,8 +286,7 @@ class IJKVideoPlayer(
             override fun surfaceCreated(holder: SurfaceHolder) {
                 currentSurface = holder.surface
                 ijkPlayer.setDisplay(holder)
-                // Resume playback when the surface is available again
-                play()
+                if (canStartPlayback) play()
             }
             override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {}
             override fun surfaceDestroyed(holder: SurfaceHolder) {
@@ -305,7 +305,7 @@ class IJKVideoPlayer(
             override fun onSurfaceTextureAvailable(surface: SurfaceTexture, width: Int, height: Int) {
                 currentSurface = Surface(surface)
                 ijkPlayer.setSurface(currentSurface)
-                play()
+                if (canStartPlayback) play()
             }
             override fun onSurfaceTextureSizeChanged(surface: SurfaceTexture, width: Int, height: Int) {}
             override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean {

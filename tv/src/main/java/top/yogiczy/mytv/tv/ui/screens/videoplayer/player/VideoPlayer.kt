@@ -14,6 +14,8 @@ abstract class VideoPlayer(
     private val coroutineScope: CoroutineScope,
 ) {
     protected var metadata = Metadata()
+    @Volatile
+    protected var canStartPlayback = false
 
     open fun initialize() {
         clearAllListeners()
@@ -28,6 +30,11 @@ abstract class VideoPlayer(
     abstract fun play()
 
     abstract fun pause()
+
+    open fun setPlaybackAllowed(allowed: Boolean) {
+        canStartPlayback = allowed
+        if (!allowed) pause()
+    }
 
     abstract fun seekTo(position: Long)
 

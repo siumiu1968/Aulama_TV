@@ -62,7 +62,7 @@ class Media3VideoPlayer(
             .setRenderersFactory(renderersFactory)
             .setLoadControl(loadControl)
             .build()
-            .apply { playWhenReady = true }
+            .apply { playWhenReady = false }
     }
     private fun dataSourceFactory(route: ChannelRoute) =
         DefaultDataSource.Factory(
@@ -141,7 +141,7 @@ class Media3VideoPlayer(
             currentSurfaceView?.let(videoPlayer::setVideoSurfaceView)
             currentTextureView?.let(videoPlayer::setVideoTextureView)
             videoPlayer.prepare()
-            videoPlayer.play()
+            if (canStartPlayback) videoPlayer.play()
             triggerPrepared()
         }
         updatePositionJob?.cancel()
@@ -345,7 +345,7 @@ class Media3VideoPlayer(
     }
 
     override fun play() {
-        videoPlayer.play()
+        if (canStartPlayback) videoPlayer.play()
     }
 
     override fun pause() {
