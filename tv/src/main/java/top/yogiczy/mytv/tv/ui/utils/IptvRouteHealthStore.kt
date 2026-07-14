@@ -17,7 +17,7 @@ data class IptvRouteHealth(
 
 /**
  * 只根據實際觀看結果學習，不會每次開機逐條測速。
- * 畫質先分級（4K > 1080p > 其他），同級先比較本機過往穩定度。
+ * 正常情況嚴格跟隨 M3U 主線至後備次序；近期確實失敗嘅線路先暫時後移。
  */
 object IptvRouteHealthStore {
     private const val key = "IPTV_ROUTE_HEALTH_V2"
@@ -30,14 +30,11 @@ object IptvRouteHealthStore {
     @Synchronized
     fun rankedIndices(
         routes: List<ChannelRoute>,
-        preferredIndex: Int? = null,
         now: Long = System.currentTimeMillis(),
     ): List<Int> {
         val health = read()
         return routes.indices.sortedWith(
             compareBy<Int> { index -> if (isCoolingDown(health[routes[index].url], now)) 1 else 0 }
-                .thenByDescending { index -> routes[index].quality.rank }
-                .thenBy { index -> routeCost(health[routes[index].url], index == preferredIndex, now) }
                 .thenBy { index -> routes[index].sourceOrder }
         )
     }
@@ -71,14 +68,6 @@ object IptvRouteHealthStore {
             lastFailureAt = now,
         )
         write(trim(health))
-    }
-
-    private fun routeCost(health: IptvRouteHealth?, preferred: Boolean, now: Long): Long {
-        if (health == null) return if (preferred) 2_100 else 2_500
-        val latency = health.averageStartupMs.takeIf { it > 0 } ?: 2_500
-        val recentSuccessBonus = if (now - health.lastSuccessAt < 7 * 24 * 60 * 60 * 1000L) 450 else 0
-        val preferredBonus = if (preferred) 300 else 0
-        return latency + health.consecutiveFailures * 5_000L - recentSuccessBonus - preferredBonus
     }
 
     private fun isCoolingDown(health: IptvRouteHealth?, now: Long): Boolean {

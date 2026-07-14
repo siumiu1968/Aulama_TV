@@ -75,10 +75,7 @@ class M3uIptvParser : IptvParser {
                 val routes = items
                     .map(IptvResponseItem::route)
                     .distinctBy(ChannelRoute::url)
-                    .sortedWith(
-                        compareByDescending<ChannelRoute> { it.quality.rank }
-                            .thenBy(ChannelRoute::sourceOrder)
-                    )
+                    .sortedBy(ChannelRoute::sourceOrder)
                 ParsedChannel(first.groupName, first.route.sourceOrder, Channel(
                     name = first.name,
                     epgName = first.channelName,

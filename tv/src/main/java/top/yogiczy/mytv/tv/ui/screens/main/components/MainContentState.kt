@@ -291,9 +291,9 @@ class MainContentState(
     ): List<Int> {
         if (channel.routes.isEmpty()) return emptyList()
         val remembered = getUrlIdx(channel.urlList, requestedIndex)
-        val ranked = IptvRouteHealthStore.rankedIndices(channel.routes, remembered)
+        val ranked = IptvRouteHealthStore.rankedIndices(channel.routes)
 
-        // 明確手動揀線時先尊重該線；自動換台則固定畫質優先（4K > 1080p）。
+        // 明確手動揀線時先尊重該線；自動換台則依 M3U 主線至後備次序。
         return if (requestedIndex != null) {
             listOf(remembered) + ranked.filterNot { it == remembered }
         } else {

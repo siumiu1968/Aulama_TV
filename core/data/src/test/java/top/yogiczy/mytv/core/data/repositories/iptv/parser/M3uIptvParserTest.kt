@@ -8,13 +8,13 @@ import top.yogiczy.mytv.core.data.entities.channel.ChannelQuality
 
 class M3uIptvParserTest {
     @Test
-    fun `merges routes into logical channels and prefers 4K`() = runBlocking {
+    fun `merges routes into logical channels and preserves curated order`() = runBlocking {
         val playlist = """
             #EXTM3U
-            #EXTINF:-1 tvg-id="368366" tvg-name="翡翠台（備用1）" group-title="香港｜1080p・實測",翡翠台 81（1080p 備用1）
-            https://example.com/jade-1080.m3u8
             #EXTINF:-1 tvg-id="368366" tvg-name="翡翠台 4K" group-title="香港｜4K・實測",翡翠台 81（4K 主線）
             https://example.com/jade-4k.m3u8
+            #EXTINF:-1 tvg-id="368366" tvg-name="翡翠台（備用1）" group-title="香港｜1080p・實測",翡翠台 81（1080p 備用1）
+            https://example.com/jade-1080.m3u8
             #EXTINF:-1 tvg-name="Now 新聞台" group-title="香港｜1080p・實測",Now 新聞台 332（1080p）
             #EXTVLCOPT:http-referrer=https://news.now.com/home/live
             https://example.com/now-main.m3u8
@@ -33,6 +33,7 @@ class M3uIptvParserTest {
         assertEquals(2, jade.routes.size)
         assertEquals(ChannelQuality.UHD_4K, jade.routes.first().quality)
         assertEquals("https://example.com/jade-4k.m3u8", jade.routes.first().url)
+        assertEquals("https://example.com/jade-1080.m3u8", jade.routes.last().url)
 
         val now = result.first().channelList.last()
         assertEquals("Now 新聞台 332", now.name)

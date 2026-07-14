@@ -126,7 +126,8 @@ class MainViewModel : ViewModel() {
     private suspend fun loadSource(source: IptvSource): ChannelGroupList {
         val repository = IptvRepository(source)
         repository.setDataChanged { onChannelChanged() }
-        return repository.getChannelGroupList(cacheTime = Configs.iptvSourceCacheTime)
+        val cacheTime = if (Constants.isAulamaManagedSource(source)) 0L else Configs.iptvSourceCacheTime
+        return repository.getChannelGroupList(cacheTime = cacheTime)
     }
 
     private suspend fun hybridChannel(channelGroupList: ChannelGroupList) =
