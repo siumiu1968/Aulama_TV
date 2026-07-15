@@ -1,0 +1,16 @@
+<resources>
+    <style name="Theme.AulamaTV" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowBackground">@color/aulama_splash_background</item>
+        <item name="android:windowActionModeOverlay">true</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/black</item>
+        <item name="android:windowNoTitle">true</item>
+    </style>
+
+    <style name="Theme.AulamaTV.Starting" parent="Theme.AulamaTV">
+        <item name="android:windowBackground">@drawable/splash_screen_background</item>
+        <item name="android:windowDisablePreview">false</item>
+    </style>
+</resources>

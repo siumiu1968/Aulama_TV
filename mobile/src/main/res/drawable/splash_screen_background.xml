@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/aulama_splash_background" />
+    <item
+        android:width="236dp"
+        android:height="100dp"
+        android:gravity="center">
+        <bitmap
+            android:gravity="fill"
+            android:src="@drawable/aulama_tv_logo" />
+    </item>
+</layer-list>

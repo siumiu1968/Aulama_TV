@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.AulamaTV.Starting" parent="Theme.AulamaTV">
+        <item name="android:windowBackground">@color/aulama_splash_background</item>
+        <item name="android:windowSplashScreenBackground">@color/aulama_splash_background</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground_safe</item>
+        <item name="android:windowSplashScreenIconBackgroundColor">@android:color/transparent</item>
+        <item name="android:windowSplashScreenAnimationDuration">250</item>
+    </style>
+</resources>

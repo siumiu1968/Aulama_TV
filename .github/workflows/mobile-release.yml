@@ -1,0 +1,80 @@
+name: Release Android Mobile APK
+
+on:
+  push:
+    tags:
+      - 'android-v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Android release tag (e.g. android-v1.0.0)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build_mobile_apk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve release tag
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            TAG="${{ github.event.inputs.tag }}"
+            git fetch --tags --force
+            git checkout "$TAG"
+          else
+            TAG="${{ github.ref_name }}"
+          fi
+          [[ "$TAG" == android-v* ]] || { echo "Invalid Android tag: $TAG"; exit 1; }
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Decode signing key
+        shell: bash
+        run: |
+          echo "${{ secrets.SIGNING_KEYSTORE_B64 }}" | base64 --decode > release.keystore
+          echo "RELEASE_STORE_FILE=${{ github.workspace }}/release.keystore" >> "$GITHUB_ENV"
+          echo "RELEASE_KEY_ALIAS=${{ secrets.SIGNING_ALIAS }}" >> "$GITHUB_ENV"
+          echo "RELEASE_STORE_PASSWORD=${{ secrets.SIGNING_STORE_PWD }}" >> "$GITHUB_ENV"
+          echo "RELEASE_KEY_PASSWORD=${{ secrets.SIGNING_KEY_PWD }}" >> "$GITHUB_ENV"
+
+      - name: Build signed Android APK
+        run: ./gradlew :mobile:assembleRelease --console=plain
+
+      - name: Locate and verify APK
+        id: apk
+        shell: bash
+        run: |
+          APK=$(find mobile/build/outputs/apk/release -name 'mytv-android-mobile-*.apk' | head -n 1)
+          [[ -n "$APK" ]] || { echo "Android APK not found"; exit 1; }
+          APKSIGNER=$(find "$ANDROID_SDK_ROOT/build-tools" -name apksigner -type f | sort -V | tail -n 1)
+          "$APKSIGNER" verify --verbose "$APK"
+          echo "apk_path=$APK" >> "$GITHUB_OUTPUT"
+
+      - name: Publish Android release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.apk.outputs.apk_path }}
+          tag_name: ${{ env.TAG }}
+          name: Aulama TV Android 1.0.0
+          draft: false
+          prerelease: false
+          make_latest: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
