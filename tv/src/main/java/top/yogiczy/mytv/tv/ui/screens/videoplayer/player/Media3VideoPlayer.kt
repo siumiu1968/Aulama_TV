@@ -3,13 +3,18 @@ package top.yogiczy.mytv.tv.ui.screens.videoplayer.player
 import android.content.Context
 import android.graphics.Color as AndroidColor
 import android.graphics.PorterDuff
+import android.hardware.display.DisplayManager
+import android.media.MediaFormat
+import android.os.Build
 import android.net.Uri
+import android.view.Display
 import android.view.SurfaceView
 import android.view.TextureView
 import androidx.annotation.OptIn
 import androidx.media3.common.C
 import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.Player
 import androidx.media3.common.VideoSize
 import androidx.media3.common.util.UnstableApi
@@ -22,6 +27,8 @@ import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.hls.HlsMediaSource
+import androidx.media3.exoplayer.mediacodec.DefaultMediaCodecAdapterFactory
+import androidx.media3.exoplayer.mediacodec.MediaCodecAdapter
 import androidx.media3.exoplayer.rtsp.RtspMediaSource
 
 import androidx.media3.exoplayer.source.MediaSource
@@ -42,10 +49,37 @@ class Media3VideoPlayer(
 ) : VideoPlayer(coroutineScope) {
     private val log = Logger.create(javaClass.simpleName)
 
+    private val toneMappingCodecAdapterFactory = object : MediaCodecAdapter.Factory {
+        private val delegate = DefaultMediaCodecAdapterFactory(context).forceEnableAsynchronous()
+
+        override fun createAdapter(
+            configuration: MediaCodecAdapter.Configuration,
+        ): MediaCodecAdapter {
+            val decoderSupportsFormat = runCatching {
+                configuration.codecInfo.isFormatSupported(configuration.format)
+            }.getOrDefault(true)
+            if (
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                configuration.surface != null &&
+                decoderSupportsFormat &&
+                !supportsHdrOutput(configuration.format)
+            ) {
+                configuration.mediaFormat.setInteger(
+                    MediaFormat.KEY_COLOR_TRANSFER_REQUEST,
+                    MediaFormat.COLOR_TRANSFER_SDR_VIDEO,
+                )
+                log.i("Requesting decoder HDR-to-SDR tone mapping for this display")
+            }
+            return delegate.createAdapter(configuration)
+        }
+    }
+
     private val videoPlayer by lazy {
-        val renderersFactory = DefaultRenderersFactory(context)
+        val renderersFactory = object : DefaultRenderersFactory(context) {
+            override fun getCodecAdapterFactory(): MediaCodecAdapter.Factory =
+                toneMappingCodecAdapterFactory
+        }
             .setEnableDecoderFallback(true)
-            .forceEnableMediaCodecAsynchronousQueueing()
             .setExtensionRendererMode(
                 if (Configs.videoPlayerForceSoftDecode)
                     DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER
@@ -87,6 +121,28 @@ class Media3VideoPlayer(
     private var currentRoute: ChannelRoute? = null
     private var currentSurfaceView: SurfaceView? = null
     private var currentTextureView: TextureView? = null
+
+    private fun supportsHdrOutput(format: Format): Boolean {
+        val requiredHdrTypes = when {
+            format.sampleMimeType == MimeTypes.VIDEO_DOLBY_VISION ->
+                intArrayOf(Display.HdrCapabilities.HDR_TYPE_DOLBY_VISION)
+            format.colorInfo?.colorTransfer == C.COLOR_TRANSFER_HLG ->
+                intArrayOf(Display.HdrCapabilities.HDR_TYPE_HLG)
+            format.colorInfo?.colorTransfer == C.COLOR_TRANSFER_ST2084 ->
+                intArrayOf(
+                    Display.HdrCapabilities.HDR_TYPE_HDR10,
+                    Display.HdrCapabilities.HDR_TYPE_HDR10_PLUS,
+                )
+            else -> return true
+        }
+
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) return false
+        val display = context.getSystemService(DisplayManager::class.java)
+            ?.getDisplay(Display.DEFAULT_DISPLAY)
+            ?: return false
+        val supportedTypes = display.hdrCapabilities.supportedHdrTypes
+        return requiredHdrTypes.any(supportedTypes::contains)
+    }
 
 
     private fun getMediaSource(

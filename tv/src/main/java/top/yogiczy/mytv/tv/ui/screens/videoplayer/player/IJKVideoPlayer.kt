@@ -2,9 +2,8 @@ package top.yogiczy.mytv.tv.ui.screens.videoplayer.player
 
 import android.content.Context
 import android.graphics.SurfaceTexture
-import android.graphics.Color as AndroidColor
-import android.graphics.PorterDuff
 import android.net.Uri
+import android.os.Build
 import android.view.Surface
 import android.view.SurfaceHolder
 import android.view.SurfaceView
@@ -31,26 +30,22 @@ class IJKVideoPlayer(
     private val maxRetryCount = 1
 
     private val ijkPlayer by lazy {
-        IjkMediaPlayer().apply {
-            //            IjkMediaPlayer.native_setLogLevel(IjkMediaPlayer.IJK_LOG_INFO)
-            setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "dns_cache_clear", 1)
-            setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "dns_cache_timeout", 0)
-            setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "http-detect-range-support", 0)
-            setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "reconnect", 2)
-            setOption(
-                IjkMediaPlayer.OPT_CATEGORY_FORMAT,
-                "timeout",
-                Configs.videoPlayerLoadTimeout
-            )
-            setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "analyzemaxduration", 1_000_000L)
-            setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "analyzeduration", 1_000_000L)
-            setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "probesize", 512 * 1024L)
-            setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "fflags", "fastseek")
-        }
+        IjkMediaPlayer()
     }
 
     private fun setOption() {
         ijkPlayer.apply {
+            val timeoutUs = Configs.videoPlayerLoadTimeout * 1_000L
+            setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "dns_cache_clear", 1)
+            setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "dns_cache_timeout", 0)
+            setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "http-detect-range-support", 0)
+            setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "reconnect", 1)
+            setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "timeout", timeoutUs)
+            setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "rw_timeout", timeoutUs)
+            setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "analyzemaxduration", 2_000_000L)
+            setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "analyzeduration", 2_000_000L)
+            setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "probesize", 1024 * 1024L)
+            setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "fflags", "fastseek")
             setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "allowed_extensions", "ALL")
             if (Configs.videoPlayerForceSoftDecode)
                 setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "mediacodec", 0)
@@ -63,20 +58,19 @@ class IJKVideoPlayer(
             setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "protocol_whitelist", "crypto,file,http,https,tcp,tls,udp,rtmp,rtsp")
             setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "opensles", 0)
             setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "framedrop", 1)
+            // IJK defaults to 31fps and discards non-reference frames above it.
+            setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "max-fps", 60)
             setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "fast", 0)
             setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "start-on-prepared", 0)
             setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "enable-accurate-seek", 1)
+            setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "sync-av-start", 1)
 
             // rtsp設置 https://ffmpeg.org/ffmpeg-protocols.html#rtsp
             setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "rtsp_transport", "tcp")
             setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "rtsp_flags", "prefer_tcp")
-            // 保留低延遲模式，但避免只得兩個 TS packet 的 socket buffer 被網絡抖動耗盡。
-            setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "buffer_size", 256 * 1024L)
-            setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "infbuf", 1)
-            setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "flush_packets", 1L)
-
-            // 直播必須維持無限讀取並關閉播放器封包緩衝，避免播放一段後卡住。
-            setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "packet-buffering", 0)
+            setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "buffer_size", 1024 * 1024L)
+            setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "infbuf", 0)
+            setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "packet-buffering", 1)
 
             //https://www.cnblogs.com/Fitz/p/18537127
             // setOption(IjkMediaPlayer.OPT_CATEGORY_CODEC, "skip_loop_filter",0) //丟棄一些“無用”的數據包，例如AVI格式中的零大小數據包
@@ -87,6 +81,53 @@ class IJKVideoPlayer(
     private var updatePositionJob: Job? = null
     private var playbackHealthJob: Job? = null
     private var playbackHealthReported = false
+    private var desiredFrameRate = 0f
+    private var currentSurface: Surface? = null
+    private var ownsCurrentSurface = false
+    private var canRequestFrameRate = false
+    private var boundSurfaceView: SurfaceView? = null
+    private var boundTextureView: TextureView? = null
+    private var surfaceHolderCallback: SurfaceHolder.Callback? = null
+    private var surfaceTextureListener: TextureView.SurfaceTextureListener? = null
+
+    private fun updateFrameRateHint() {
+        val stream = runCatching { ijkPlayer.mediaInfo?.mMeta?.mVideoStream }.getOrNull()
+        val frameRate = when {
+            stream != null && stream.mFpsNum > 0 && stream.mFpsDen > 0 ->
+                stream.mFpsNum.toFloat() / stream.mFpsDen
+            ijkPlayer.videoDecodeFramesPerSecond.isFinite() ->
+                ijkPlayer.videoDecodeFramesPerSecond
+            else -> 0f
+        }
+
+        if (frameRate in 1f..121f) {
+            desiredFrameRate = frameRate
+            applyFrameRateHint(currentSurface, frameRate)
+        }
+    }
+
+    private fun applyFrameRateHint(surface: Surface?, frameRate: Float = desiredFrameRate) {
+        if (
+            !canRequestFrameRate ||
+            Build.VERSION.SDK_INT < Build.VERSION_CODES.R ||
+            surface?.isValid != true
+        ) return
+
+        runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                surface.setFrameRate(
+                    frameRate,
+                    Surface.FRAME_RATE_COMPATIBILITY_FIXED_SOURCE,
+                    Surface.CHANGE_FRAME_RATE_ALWAYS,
+                )
+            } else {
+                surface.setFrameRate(
+                    frameRate,
+                    Surface.FRAME_RATE_COMPATIBILITY_FIXED_SOURCE,
+                )
+            }
+        }.onFailure { log.w("Unable to apply ${frameRate}fps surface hint: ${it.message}") }
+    }
 
     private fun startPlaybackHealthMonitor() {
         playbackHealthJob?.cancel()
@@ -125,6 +166,7 @@ class IJKVideoPlayer(
         IMediaPlayer.OnCompletionListener {
         
         override fun onPrepared(mp: IMediaPlayer?) {
+            updateFrameRateHint()
             triggerReady()
             if (canStartPlayback) play()
             
@@ -144,6 +186,7 @@ class IJKVideoPlayer(
                 IMediaPlayer.MEDIA_INFO_BUFFERING_END -> triggerBuffering(false)
                 IMediaPlayer.MEDIA_INFO_VIDEO_RENDERING_START -> {
                     retryCount = 0
+                    updateFrameRateHint()
                     triggerFirstFrame()
                     triggerIsPlayingChanged(true)
                     startPlaybackHealthMonitor()
@@ -196,6 +239,7 @@ class IJKVideoPlayer(
     override fun release() {
         updatePositionJob?.cancel()
         playbackHealthJob?.cancel()
+        unbindVideoOutput()
         ijkPlayer.reset()
         ijkPlayer.release()
         super.release()
@@ -204,18 +248,16 @@ class IJKVideoPlayer(
     override fun prepare(route: ChannelRoute) {
         playbackHealthJob?.cancel()
         playbackHealthReported = false
+        applyFrameRateHint(currentSurface, 0f)
+        desiredFrameRate = 0f
         val isNewRoute = currentRoute?.url != route.url
         currentRoute = route
         if (isNewRoute) retryCount = 0
         try {
-            clearCurrentSurface()
             ijkPlayer.reset()
-            // 在設置數據源前確保Surface有效
-            if (currentSurface != null) {
-                ijkPlayer.setSurface(currentSurface)
-            }
-            ijkPlayer.setDataSource(context, Uri.parse(route.url), route.requestHeaders)
             setOption()
+            currentSurface?.takeIf(Surface::isValid)?.let(ijkPlayer::setSurface)
+            ijkPlayer.setDataSource(context, Uri.parse(route.url), route.requestHeaders)
             ijkPlayer.prepareAsync()
             triggerPrepared()
         } catch (e: Exception) {
@@ -269,60 +311,99 @@ class IJKVideoPlayer(
         super.stop()
     }
 
-    // 添加成員變量保存當前Surface
-    private var currentSurface: Surface? = null
+    private fun bindSurface(surface: Surface?, ownsSurface: Boolean, supportsFrameRate: Boolean) {
+        if (currentSurface === surface) return
 
-    private fun clearCurrentSurface() {
-        val surface = currentSurface?.takeIf(Surface::isValid) ?: return
-        val canvas = runCatching { surface.lockCanvas(null) }.getOrNull() ?: return
-        try {
-            canvas.drawColor(AndroidColor.BLACK, PorterDuff.Mode.SRC)
-        } finally {
-            runCatching { surface.unlockCanvasAndPost(canvas) }
+        ijkPlayer.setSurface(null)
+        if (ownsCurrentSurface) {
+            currentSurface?.release()
         }
+
+        currentSurface = surface
+        ownsCurrentSurface = ownsSurface
+        canRequestFrameRate = supportsFrameRate
+        applyFrameRateHint(surface)
+        ijkPlayer.setSurface(surface)
+        if (surface != null && canStartPlayback) play()
+    }
+
+    private fun unbindVideoOutput() {
+        surfaceHolderCallback?.let { callback ->
+            boundSurfaceView?.holder?.removeCallback(callback)
+        }
+        if (boundTextureView?.surfaceTextureListener === surfaceTextureListener) {
+            boundTextureView?.surfaceTextureListener = null
+        }
+        surfaceHolderCallback = null
+        surfaceTextureListener = null
+        boundSurfaceView = null
+        boundTextureView = null
+        bindSurface(null, ownsSurface = false, supportsFrameRate = false)
     }
 
     override fun setVideoSurfaceView(surfaceView: SurfaceView) {
-        surfaceView.holder.addCallback(object : SurfaceHolder.Callback {
+        if (boundSurfaceView === surfaceView) return
+        unbindVideoOutput()
+        boundSurfaceView = surfaceView
+
+        val callback = object : SurfaceHolder.Callback {
             override fun surfaceCreated(holder: SurfaceHolder) {
-                currentSurface = holder.surface
-                ijkPlayer.setDisplay(holder)
-                if (canStartPlayback) play()
+                if (boundSurfaceView === surfaceView) {
+                    bindSurface(holder.surface, ownsSurface = false, supportsFrameRate = true)
+                }
             }
+
             override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {}
+
             override fun surfaceDestroyed(holder: SurfaceHolder) {
-                // Pause playback when the surface is destroyed
-                pause()
-                ijkPlayer.setSurface(null)
-                currentSurface?.release()
-                currentSurface = null
+                if (boundSurfaceView === surfaceView) {
+                    pause()
+                    bindSurface(null, ownsSurface = false, supportsFrameRate = false)
+                }
             }
-        })
-        ijkPlayer.setDisplay(surfaceView.holder)
+        }
+        surfaceHolderCallback = callback
+        surfaceView.holder.addCallback(callback)
+        surfaceView.holder.surface
+            ?.takeIf(Surface::isValid)
+            ?.let { bindSurface(it, ownsSurface = false, supportsFrameRate = true) }
     }
 
     override fun setVideoTextureView(textureView: TextureView) {
-        textureView.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
+        if (boundTextureView === textureView) return
+        unbindVideoOutput()
+        boundTextureView = textureView
+
+        val listener = object : TextureView.SurfaceTextureListener {
             override fun onSurfaceTextureAvailable(surface: SurfaceTexture, width: Int, height: Int) {
-                currentSurface = Surface(surface)
-                ijkPlayer.setSurface(currentSurface)
-                if (canStartPlayback) play()
+                if (boundTextureView === textureView) {
+                    bindSurface(
+                        Surface(surface),
+                        ownsSurface = true,
+                        supportsFrameRate = false,
+                    )
+                }
             }
+
             override fun onSurfaceTextureSizeChanged(surface: SurfaceTexture, width: Int, height: Int) {}
+
             override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean {
-                pause()
-                ijkPlayer.setSurface(null)
-                currentSurface?.release()
-                currentSurface = null
+                if (boundTextureView === textureView) {
+                    pause()
+                    bindSurface(null, ownsSurface = false, supportsFrameRate = false)
+                }
                 return true
             }
+
             override fun onSurfaceTextureUpdated(surface: SurfaceTexture) {}
         }
+        surfaceTextureListener = listener
+        textureView.surfaceTextureListener = listener
 
         if (textureView.isAvailable) {
-            val newSurface = Surface(textureView.surfaceTexture)
-            currentSurface = newSurface
-            ijkPlayer.setSurface(newSurface)
+            textureView.surfaceTexture?.let {
+                bindSurface(Surface(it), ownsSurface = true, supportsFrameRate = false)
+            }
         }
     }
 }
