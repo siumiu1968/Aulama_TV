@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -66,25 +67,27 @@ fun VideoPlayerScreen(
                 settingsViewModel.videoPlayerRenderMode
             }
 
-        when (renderMode) {
-            Configs.VideoPlayerRenderMode.SURFACE_VIEW -> {
-                AndroidView(
-                    modifier = Modifier
-                        .align(Alignment.Center)
-                        .then(displayModeModifier),
-                    factory = { SurfaceView(context) },
-                    update = { state.setVideoSurfaceView(it) },
-                )
-            }
+        key(state.videoOutputGeneration, renderMode) {
+            when (renderMode) {
+                Configs.VideoPlayerRenderMode.SURFACE_VIEW -> {
+                    AndroidView(
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .then(displayModeModifier),
+                        factory = { SurfaceView(context) },
+                        update = { state.setVideoSurfaceView(it) },
+                    )
+                }
 
-            Configs.VideoPlayerRenderMode.TEXTURE_VIEW -> {
-                AndroidView(
-                    modifier = Modifier
-                        .align(Alignment.Center)
-                        .then(displayModeModifier),
-                    factory = { TextureView(context) },
-                    update = { state.setVideoTextureView(it) },
-                )
+                Configs.VideoPlayerRenderMode.TEXTURE_VIEW -> {
+                    AndroidView(
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .then(displayModeModifier),
+                        factory = { TextureView(context) },
+                        update = { state.setVideoTextureView(it) },
+                    )
+                }
             }
         }
 

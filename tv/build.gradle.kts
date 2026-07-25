@@ -18,8 +18,8 @@ android {
         applicationId = "top.yogiczy.mytv.tv.tc"
         minSdk = libs.versions.minSdk.get().toInt()
         targetSdk = libs.versions.targetSdk.get().toInt()
-        versionCode = 30
-        versionName = "2.6.5-family"
+        versionCode = 31
+        versionName = "2.6.6-family"
         vectorDrawables {
             useSupportLibrary = true
         }
@@ -97,6 +97,7 @@ dependencies {
         implementation(libs.androidx.media3.exoplayer.hls)
         implementation(libs.androidx.media3.exoplayer.rtsp)
     }
+    implementation(libs.androidx.media3.datasource.okhttp)
 
     // 二維碼
     implementation(libs.qrose)

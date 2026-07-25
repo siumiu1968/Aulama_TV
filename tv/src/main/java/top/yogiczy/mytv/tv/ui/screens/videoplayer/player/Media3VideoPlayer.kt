@@ -20,7 +20,7 @@ import androidx.media3.common.VideoSize
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.common.util.Util
 import androidx.media3.datasource.DefaultDataSource
-import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.DecoderReuseEvaluation
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
@@ -38,9 +38,14 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import okhttp3.Cookie
+import okhttp3.CookieJar
+import okhttp3.HttpUrl
 import top.yogiczy.mytv.core.data.entities.channel.ChannelRoute
+import top.yogiczy.mytv.core.data.network.OkHttp
 import top.yogiczy.mytv.core.data.utils.Logger
 import top.yogiczy.mytv.tv.ui.utils.Configs
+import java.util.concurrent.TimeUnit
 
 @OptIn(UnstableApi::class)
 class Media3VideoPlayer(
@@ -50,7 +55,7 @@ class Media3VideoPlayer(
     private val log = Logger.create(javaClass.simpleName)
 
     private val toneMappingCodecAdapterFactory = object : MediaCodecAdapter.Factory {
-        private val delegate = DefaultMediaCodecAdapterFactory(context).forceEnableAsynchronous()
+        private val delegate = DefaultMediaCodecAdapterFactory(context).forceDisableAsynchronous()
 
         override fun createAdapter(
             configuration: MediaCodecAdapter.Configuration,
@@ -69,9 +74,49 @@ class Media3VideoPlayer(
                     MediaFormat.COLOR_TRANSFER_SDR_VIDEO,
                 )
                 log.i("Requesting decoder HDR-to-SDR tone mapping for this display")
+                return runCatching {
+                    delegate.createAdapter(configuration)
+                }.getOrElse {
+                    configuration.mediaFormat.removeKey(MediaFormat.KEY_COLOR_TRANSFER_REQUEST)
+                    log.w("Decoder rejected HDR-to-SDR tone mapping; retrying native output")
+                    delegate.createAdapter(configuration)
+                }
             }
             return delegate.createAdapter(configuration)
         }
+    }
+
+    private val mediaCookies = mutableListOf<Cookie>()
+    private val mediaCookieJar = object : CookieJar {
+        override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
+            synchronized(mediaCookies) {
+                val now = System.currentTimeMillis()
+                mediaCookies.removeAll { existing ->
+                    existing.expiresAt < now || cookies.any { incoming ->
+                        existing.name == incoming.name &&
+                            existing.domain == incoming.domain &&
+                            existing.path == incoming.path
+                    }
+                }
+                mediaCookies += cookies.filter { it.expiresAt >= now }
+            }
+        }
+
+        override fun loadForRequest(url: HttpUrl): List<Cookie> =
+            synchronized(mediaCookies) {
+                val now = System.currentTimeMillis()
+                mediaCookies.removeAll { it.expiresAt < now }
+                mediaCookies.filter { it.matches(url) }
+            }
+    }
+
+    private val mediaHttpClient by lazy {
+        OkHttp.client.newBuilder()
+            .cookieJar(mediaCookieJar)
+            .connectTimeout(Configs.videoPlayerLoadTimeout, TimeUnit.MILLISECONDS)
+            .readTimeout(Configs.videoPlayerLoadTimeout, TimeUnit.MILLISECONDS)
+            .writeTimeout(Configs.videoPlayerLoadTimeout, TimeUnit.MILLISECONDS)
+            .build()
     }
 
     private val videoPlayer by lazy {
@@ -101,15 +146,11 @@ class Media3VideoPlayer(
     private fun dataSourceFactory(route: ChannelRoute) =
         DefaultDataSource.Factory(
             context,
-            DefaultHttpDataSource.Factory().apply {
+            OkHttpDataSource.Factory(mediaHttpClient).apply {
                 setUserAgent(Configs.videoPlayerUserAgent)
                 if (route.requestHeaders.isNotEmpty()) {
                     setDefaultRequestProperties(route.requestHeaders)
                 }
-                setConnectTimeoutMs(Configs.videoPlayerLoadTimeout.toInt())
-                setReadTimeoutMs(Configs.videoPlayerLoadTimeout.toInt())
-                setKeepPostFor302Redirects(true)
-                setAllowCrossProtocolRedirects(true)
             },
         )
 
@@ -459,7 +500,11 @@ class Media3VideoPlayer(
         }
     }
 
-    private companion object {
-        const val MAX_RECOVERABLE_ERROR_RETRIES = 1
+    companion object {
+        private const val MAX_RECOVERABLE_ERROR_RETRIES = 1
+        private const val TVB_AKAMAI_HOST = "prd-vcache.edge-global.akamai.tvb.com"
+
+        internal fun requiresTvbHlsSession(route: ChannelRoute): Boolean =
+            Uri.parse(route.url).host.equals(TVB_AKAMAI_HOST, ignoreCase = true)
     }
 }

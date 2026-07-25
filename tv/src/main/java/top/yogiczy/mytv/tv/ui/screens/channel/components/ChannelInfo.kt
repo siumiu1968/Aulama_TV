@@ -15,15 +15,13 @@ import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -107,6 +105,7 @@ fun ChannelInfo(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ChannelInfoTags(
     modifier: Modifier = Modifier,
@@ -124,9 +123,10 @@ private fun ChannelInfoTags(
     val currentPlaybackEpgProgramme = currentPlaybackEpgProgrammeProvider()
     val playerMetadata = playerMetadataProvider()
 
-    Row(
+    FlowRow(
         modifier = modifier,
         horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         val tagColors = TagDefaults.colors(
             containerColor = MaterialTheme.colorScheme.inverseSurface.copy(0.8f),
@@ -210,6 +210,7 @@ private fun ChannelInfoExtra(
         verticalAlignment = Alignment.Bottom,
     ) {
         ChannelInfoTags(
+            modifier = Modifier.weight(1f, fill = false),
             channelProvider = channelProvider,
             channelLineIdxProvider = channelLineIdxProvider,
             isInTimeShiftProvider = isInTimeShiftProvider,
@@ -221,7 +222,6 @@ private fun ChannelInfoExtra(
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ChannelInfoTitle(
     modifier: Modifier = Modifier,
@@ -235,26 +235,21 @@ private fun ChannelInfoTitle(
     val channel = channelProvider()
 
     if (dense) {
-        FlowRow(
+        Column(
             modifier = modifier,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            val density = LocalDensity.current
-            var heightPx by remember { mutableIntStateOf(0) }
-            val heightDp = remember(heightPx) { with(density) { heightPx.toDp() } }
-
             Text(
                 channel.name,
                 style = MaterialTheme.typography.headlineMedium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.onSizeChanged { heightPx = it.height },
             )
 
             ChannelInfoExtra(
                 modifier = Modifier
-                    .height(heightDp)
-                    .padding(bottom = 5.dp),
+                    .fillMaxWidth()
+                    .padding(bottom = 2.dp),
                 channelProvider = channelProvider,
                 channelLineIdxProvider = channelLineIdxProvider,
                 isInTimeShiftProvider = isInTimeShiftProvider,
@@ -266,7 +261,7 @@ private fun ChannelInfoTitle(
         Row(
             modifier = modifier,
             horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalAlignment = Alignment.Bottom,
+            verticalAlignment = Alignment.Top,
         ) {
             Text(
                 channel.name,
@@ -277,7 +272,9 @@ private fun ChannelInfoTitle(
             )
 
             ChannelInfoExtra(
-                modifier = Modifier.padding(bottom = 5.dp),
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(top = 5.dp),
                 channelProvider = channelProvider,
                 channelLineIdxProvider = channelLineIdxProvider,
                 isInTimeShiftProvider = isInTimeShiftProvider,
@@ -375,7 +372,11 @@ fun ChannelInfoNetSpeed(
     Text(
         text = if (netSpeed < 1024 * 999) "${netSpeed / 1024}KB/s"
         else "${DecimalFormat("#.#").format(netSpeed / 1024 / 1024f)}MB/s",
-        modifier = modifier.sizeIn(minWidth = 60.dp),
+        modifier = modifier.sizeIn(minWidth = 72.dp),
+        maxLines = 1,
+        softWrap = false,
+        overflow = TextOverflow.Clip,
+        textAlign = TextAlign.End,
     )
 }
 

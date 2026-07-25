@@ -118,7 +118,7 @@ class IJKVideoPlayer(
                 surface.setFrameRate(
                     frameRate,
                     Surface.FRAME_RATE_COMPATIBILITY_FIXED_SOURCE,
-                    Surface.CHANGE_FRAME_RATE_ALWAYS,
+                    Surface.CHANGE_FRAME_RATE_ONLY_IF_SEAMLESS,
                 )
             } else {
                 surface.setFrameRate(

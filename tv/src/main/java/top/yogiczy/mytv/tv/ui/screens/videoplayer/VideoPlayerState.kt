@@ -8,6 +8,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -47,6 +48,7 @@ class VideoPlayerState(
     }
     private var initialized = false
     private var playbackGeneration = 0
+    private var fourKFallbackRouteUrl: String? = null
     private var bufferingHealthJob: Job? = null
     private var degradedReported = false
     private var isAppForeground = false
@@ -74,6 +76,10 @@ class VideoPlayerState(
     var requiresSurfaceView by mutableStateOf(false)
         private set
 
+    /** 播放器引擎轉換時重建輸出 View，避免新舊解碼器同時佔用同一 Surface。 */
+    var videoOutputGeneration by mutableIntStateOf(0)
+        private set
+
     /** 總時長 */
     var duration by mutableLongStateOf(0L)
 
@@ -85,6 +91,7 @@ class VideoPlayerState(
 
     fun prepare(route: ChannelRoute) {
         if (!initialized) initialize()
+        if (currentRoute?.url != route.url) fourKFallbackRouteUrl = null
         playbackGeneration += 1
         bufferingHealthJob?.cancel()
         recentRebuffers.clear()
@@ -177,7 +184,10 @@ class VideoPlayerState(
         route: ChannelRoute,
         configuredType: Configs.VideoPlayerType = Configs.videoPlayerType,
     ): Configs.VideoPlayerType =
-        if (route.quality == ChannelQuality.UHD_4K) {
+        if (
+            route.quality == ChannelQuality.UHD_4K ||
+            Media3VideoPlayer.requiresTvbHlsSession(route)
+        ) {
             Configs.VideoPlayerType.MEDIA3
         } else {
             configuredType
@@ -192,19 +202,13 @@ class VideoPlayerState(
         if (activePlayerType == type) return
 
         instance.release()
+        currentSurface = null
+        currentTexture = null
+        videoOutputGeneration += 1
         instance = createPlayer(type)
         activePlayerType = type
         instance.setPlaybackAllowed(isAppForeground)
         if (initialized) configureInstance()
-
-        if (
-            requiresSurfaceView ||
-            settingsViewModel.videoPlayerRenderMode == Configs.VideoPlayerRenderMode.SURFACE_VIEW
-        ) {
-            currentSurface?.let(instance::setVideoSurfaceView)
-        } else {
-            currentTexture?.let(instance::setVideoTextureView)
-        }
     }
 
     private fun configureInstance() {
@@ -212,7 +216,30 @@ class VideoPlayerState(
         instance.onResolution { width, height ->
             if (width > 0 && height > 0) aspectRatio = width.toFloat() / height
         }
-        instance.onError { ex ->
+        instance.onError playerError@ { ex ->
+            val route = currentRoute
+            if (
+                ex != null &&
+                route?.quality == ChannelQuality.UHD_4K &&
+                activePlayerType == Configs.VideoPlayerType.MEDIA3 &&
+                fourKFallbackRouteUrl != route.url &&
+                ex.errorCodeName.contains("DECODER", ignoreCase = true)
+            ) {
+                fourKFallbackRouteUrl = route.url
+                hasRenderedFirstFrame = false
+                isBuffering = true
+                coroutineScope.launch {
+                    if (
+                        currentRoute?.url == route.url &&
+                        activePlayerType == Configs.VideoPlayerType.MEDIA3
+                    ) {
+                        switchPlayerIfNeeded(Configs.VideoPlayerType.IJK)
+                        instance.prepare(route)
+                    }
+                }
+                return@playerError
+            }
+
             hasRenderedFirstFrame = false
             error = ex?.let { "${it.errorCodeName}(${it.errorCode})" }
                 ?.apply { onErrorListeners.forEach { it.invoke() } }
