@@ -83,6 +83,7 @@ class Media3VideoPlayer(
     private var updatePositionJob: Job? = null
     private var playbackHealthJob: Job? = null
     private var playbackHealthReported = false
+    private var recoverableErrorRetries = 0
     private var currentRoute: ChannelRoute? = null
     private var currentSurfaceView: SurfaceView? = null
     private var currentTextureView: TextureView? = null
@@ -161,8 +162,13 @@ class Media3VideoPlayer(
                 androidx.media3.common.PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW,
                 androidx.media3.common.PlaybackException.ERROR_CODE_DECODING_FAILED,
                 androidx.media3.common.PlaybackException.ERROR_CODE_IO_UNSPECIFIED -> {
-                    videoPlayer.seekToDefaultPosition()
-                    videoPlayer.prepare()
+                    if (recoverableErrorRetries < MAX_RECOVERABLE_ERROR_RETRIES) {
+                        recoverableErrorRetries += 1
+                        videoPlayer.seekToDefaultPosition()
+                        videoPlayer.prepare()
+                    } else {
+                        triggerError(PlaybackException(ex.errorCodeName, ex.errorCode))
+                    }
                 }
 
                 // 當解析容器不支持時，嘗試使用其他解析容器
@@ -341,6 +347,7 @@ class Media3VideoPlayer(
 
     override fun prepare(route: ChannelRoute) {
         contentTypeAttempts.clear()
+        recoverableErrorRetries = 0
         prepareInternal(route)
     }
 
@@ -358,6 +365,7 @@ class Media3VideoPlayer(
 
     override fun stop() {
         playbackHealthJob?.cancel()
+        recoverableErrorRetries = 0
         videoPlayer.stop()
         updatePositionJob?.cancel()
         super.stop()
@@ -393,5 +401,9 @@ class Media3VideoPlayer(
                 runCatching { textureView.unlockCanvasAndPost(canvas) }
             }
         }
+    }
+
+    private companion object {
+        const val MAX_RECOVERABLE_ERROR_RETRIES = 1
     }
 }

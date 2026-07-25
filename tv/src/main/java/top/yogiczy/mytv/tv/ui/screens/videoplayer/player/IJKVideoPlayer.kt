@@ -42,9 +42,9 @@ class IJKVideoPlayer(
                 "timeout",
                 Configs.videoPlayerLoadTimeout
             )
-            setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "analyzemaxduration", 100L)
-            setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "analyzeduration", 1)
-            setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "probesize", 1024 * 10)
+            setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "analyzemaxduration", 1_000_000L)
+            setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "analyzeduration", 1_000_000L)
+            setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "probesize", 512 * 1024L)
             setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "fflags", "fastseek")
         }
     }
@@ -62,15 +62,16 @@ class IJKVideoPlayer(
             }
             setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "protocol_whitelist", "crypto,file,http,https,tcp,tls,udp,rtmp,rtsp")
             setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "opensles", 0)
-            setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "framedrop", 5)
-            setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "fast", 1)
+            setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "framedrop", 1)
+            setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "fast", 0)
             setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "start-on-prepared", 0)
             setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "enable-accurate-seek", 1)
 
             // rtsp設置 https://ffmpeg.org/ffmpeg-protocols.html#rtsp
             setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "rtsp_transport", "tcp")
             setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "rtsp_flags", "prefer_tcp")
-            setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "buffer_size", 1316)
+            // 保留低延遲模式，但避免只得兩個 TS packet 的 socket buffer 被網絡抖動耗盡。
+            setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "buffer_size", 256 * 1024L)
             setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "infbuf", 1)
             setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "flush_packets", 1L)
 

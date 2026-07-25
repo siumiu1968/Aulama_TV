@@ -59,7 +59,14 @@ fun VideoPlayerScreen(
             VideoPlayerDisplayMode.WIDE -> Modifier.aspectRatio(2.35f / 1)
         }
 
-        when (settingsViewModel.videoPlayerRenderMode) {
+        val renderMode =
+            if (state.requiresSurfaceView) {
+                Configs.VideoPlayerRenderMode.SURFACE_VIEW
+            } else {
+                settingsViewModel.videoPlayerRenderMode
+            }
+
+        when (renderMode) {
             Configs.VideoPlayerRenderMode.SURFACE_VIEW -> {
                 AndroidView(
                     modifier = Modifier

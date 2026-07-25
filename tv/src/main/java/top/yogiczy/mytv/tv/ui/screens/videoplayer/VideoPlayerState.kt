@@ -21,11 +21,12 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import top.yogiczy.mytv.core.data.entities.channel.ChannelQuality
 import top.yogiczy.mytv.core.data.entities.channel.ChannelRoute
 import top.yogiczy.mytv.tv.ui.screens.settings.SettingsViewModel
+import top.yogiczy.mytv.tv.ui.screens.videoplayer.player.IJKVideoPlayer
 import top.yogiczy.mytv.tv.ui.screens.videoplayer.player.Media3VideoPlayer
 import top.yogiczy.mytv.tv.ui.screens.videoplayer.player.VideoPlayer
-import top.yogiczy.mytv.tv.ui.screens.videoplayer.player.IJKVideoPlayer
 import top.yogiczy.mytv.tv.ui.utils.Configs
 
 
@@ -38,8 +39,13 @@ class VideoPlayerState(
     private var defaultDisplayModeProvider: () -> VideoPlayerDisplayMode = { VideoPlayerDisplayMode.ORIGINAL },
 ) {
     private var currentRoute: ChannelRoute? = null
-    private var currentSurface: Any? = null
-    private var currentTexture: Any? = null
+    private var currentSurface: SurfaceView? = null
+    private var currentTexture: TextureView? = null
+    private var activePlayerType = when (instance) {
+        is Media3VideoPlayer -> Configs.VideoPlayerType.MEDIA3
+        else -> Configs.VideoPlayerType.IJK
+    }
+    private var initialized = false
     private var playbackGeneration = 0
     private var bufferingHealthJob: Job? = null
     private var degradedReported = false
@@ -64,6 +70,10 @@ class VideoPlayerState(
     var hasRenderedFirstFrame by mutableStateOf(false)
         private set
 
+    /** 4K/HDR 輸出必須使用 SurfaceView，避免 TextureView 將 HDR 轉成 SDR。 */
+    var requiresSurfaceView by mutableStateOf(false)
+        private set
+
     /** 總時長 */
     var duration by mutableLongStateOf(0L)
 
@@ -74,14 +84,18 @@ class VideoPlayerState(
     var metadata by mutableStateOf(VideoPlayer.Metadata())
 
     fun prepare(route: ChannelRoute) {
+        if (!initialized) initialize()
         playbackGeneration += 1
         bufferingHealthJob?.cancel()
         recentRebuffers.clear()
         degradedReported = false
         currentRoute = route
+        requiresSurfaceView = route.quality == ChannelQuality.UHD_4K
+        if (requiresSurfaceView) currentTexture = null
         error = null
         hasRenderedFirstFrame = false
         isBuffering = true
+        switchPlayerIfNeeded(preferredPlayerType(route))
         instance.prepare(route)
     }
 
@@ -114,11 +128,14 @@ class VideoPlayerState(
 
     fun setVideoSurfaceView(surfaceView: SurfaceView) {
         currentSurface = surfaceView
+        currentTexture = null
         instance.setVideoSurfaceView(surfaceView)
     }
 
     fun setVideoTextureView(textureView: TextureView) {
+        if (requiresSurfaceView) return
         currentTexture = textureView
+        currentSurface = null
         instance.setVideoTextureView(textureView)
     }
 
@@ -156,43 +173,44 @@ class VideoPlayerState(
     }
 
 
-    fun initialize() {
+    private fun preferredPlayerType(
+        route: ChannelRoute,
+        configuredType: Configs.VideoPlayerType = Configs.videoPlayerType,
+    ): Configs.VideoPlayerType =
+        if (route.quality == ChannelQuality.UHD_4K) {
+            Configs.VideoPlayerType.MEDIA3
+        } else {
+            configuredType
+        }
+
+    private fun createPlayer(type: Configs.VideoPlayerType): VideoPlayer = when (type) {
+        Configs.VideoPlayerType.IJK -> IJKVideoPlayer(context, coroutineScope)
+        Configs.VideoPlayerType.MEDIA3 -> Media3VideoPlayer(context, coroutineScope)
+    }
+
+    private fun switchPlayerIfNeeded(type: Configs.VideoPlayerType) {
+        if (activePlayerType == type) return
+
+        instance.release()
+        instance = createPlayer(type)
+        activePlayerType = type
+        instance.setPlaybackAllowed(isAppForeground)
+        if (initialized) configureInstance()
+
+        if (
+            requiresSurfaceView ||
+            settingsViewModel.videoPlayerRenderMode == Configs.VideoPlayerRenderMode.SURFACE_VIEW
+        ) {
+            currentSurface?.let(instance::setVideoSurfaceView)
+        } else {
+            currentTexture?.let(instance::setVideoTextureView)
+        }
+    }
+
+    private fun configureInstance() {
         instance.initialize()
         instance.onResolution { width, height ->
             if (width > 0 && height > 0) aspectRatio = width.toFloat() / height
-        }
-        
-        // 監聽播放器類型變化
-        settingsViewModel.videoPlayerTypeValue = Configs.videoPlayerType
-        settingsViewModel.onVideoPlayerTypeChanged = { type ->
-            currentRoute?.let { route ->
-                val newInstance = when (type) {
-                    Configs.VideoPlayerType.IJK -> IJKVideoPlayer(context, coroutineScope)
-                    Configs.VideoPlayerType.MEDIA3 -> Media3VideoPlayer(context, coroutineScope)
-                    else -> IJKVideoPlayer(context, coroutineScope)
-                }
-                
-                // 保存當前播放狀態
-                val wasPlaying = isPlaying
-                val position = currentPosition
-                
-                // 釋放舊實例
-                instance.release()
-                
-                // 創建新實例
-                instance = newInstance
-                instance.setPlaybackAllowed(isAppForeground)
-                initialize()
-                
-                // 恢復播放狀態
-                prepare(route)
-                seekTo(position)
-                if (wasPlaying) play()
-                
-                // 恢復surface
-                (currentSurface as? SurfaceView)?.let(::setVideoSurfaceView)
-                (currentTexture as? TextureView)?.let(::setVideoTextureView)
-            }
         }
         instance.onError { ex ->
             hasRenderedFirstFrame = false
@@ -243,10 +261,33 @@ class VideoPlayerState(
         instance.onPlaybackDegraded(::reportPlaybackDegraded)
     }
 
+    fun initialize() {
+        if (initialized) return
+        initialized = true
+        settingsViewModel.videoPlayerTypeValue = Configs.videoPlayerType
+        settingsViewModel.onVideoPlayerTypeChanged = { type ->
+            currentRoute?.let { route ->
+                val targetType = preferredPlayerType(route, type)
+                if (targetType == activePlayerType) return@let
+
+                val wasPlaying = isPlaying
+                val position = currentPosition
+                switchPlayerIfNeeded(targetType)
+                prepare(route)
+                seekTo(position)
+                if (wasPlaying) play()
+            }
+        }
+        configureInstance()
+    }
+
     fun release() {
+        initialized = false
+        settingsViewModel.onVideoPlayerTypeChanged = null
         onReadyListeners.clear()
         onFirstFrameListeners.clear()
         onErrorListeners.clear()
+        onInterruptListeners.clear()
         onPlaybackDegradedListeners.clear()
         bufferingHealthJob?.cancel()
         instance.release()
