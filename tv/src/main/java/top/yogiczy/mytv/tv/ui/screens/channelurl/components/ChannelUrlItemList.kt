@@ -24,10 +24,13 @@ fun ChannelUrlItemList(
     modifier: Modifier = Modifier,
     urlListProvider: () -> ImmutableList<String> = { persistentListOf() },
     currentUrlProvider: () -> String = { "" },
+    priorityUrlsProvider: () -> List<String> = { emptyList() },
     onSelected: (String) -> Unit = {},
+    onPriorityToggle: (String) -> Unit = {},
     onUserAction: () -> Unit = {},
 ) {
     val urlList = urlListProvider()
+    val priorityUrls = priorityUrlsProvider()
 
     val listState = rememberLazyListState(max(0, urlList.indexOf(currentUrlProvider()) - 2))
 
@@ -48,7 +51,14 @@ fun ChannelUrlItemList(
                 urlProvider = { url },
                 urlIdxProvider = { index },
                 isSelectedProvider = { url == currentUrlProvider() },
+                priorityRankProvider = {
+                    priorityUrls.indexOf(url).takeIf { it >= 0 }?.plus(1)
+                },
                 onSelected = { onSelected(url) },
+                onPriorityToggle = {
+                    onUserAction()
+                    onPriorityToggle(url)
+                },
             )
         }
     }

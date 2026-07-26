@@ -13,8 +13,11 @@ data class IptvRouteHealth(
     val failureCount: Int = 0,
     val consecutiveFailures: Int = 0,
     val averageStartupMs: Long = 0,
+    val stableWatchMs: Long = 0,
+    val quickExitCount: Int = 0,
     val lastSuccessAt: Long = 0,
     val lastFailureAt: Long = 0,
+    val lastWatchAt: Long = 0,
     val preferredPlaybackMode: String? = null,
 )
 
@@ -35,6 +38,7 @@ object IptvRouteHealthStore {
     private const val playbackProfile = "IJK_AC3_HEALTH_V2"
     private const val shortCooldownMs = 30 * 60 * 1000L
     private const val longCooldownMs = 2 * 60 * 60 * 1000L
+    private const val maxLearnedWatchMs = 12 * 60 * 60 * 1000L
     private const val maxEntries = 250
     private val autoDeprioritizedHosts = setOf("120.234.44.98")
     private val gson = Gson()
@@ -83,8 +87,18 @@ object IptvRouteHealthStore {
             else -> 0.0
         }
         val repeatedFailurePenalty = min(health.consecutiveFailures, 3) * 12.0
+        val stableWatchBonus = when {
+            health.stableWatchMs >= 60 * 60 * 1000L -> 30.0
+            health.stableWatchMs >= 30 * 60 * 1000L -> 24.0
+            health.stableWatchMs >= 10 * 60 * 1000L -> 16.0
+            health.stableWatchMs >= 3 * 60 * 1000L -> 9.0
+            health.stableWatchMs >= 60 * 1000L -> 4.0
+            else -> 0.0
+        }
+        val quickExitPenalty = min(health.quickExitCount, 4) * 6.0
 
-        return reliability + startupScore + provenSuccessBonus + recencyScore - repeatedFailurePenalty
+        return reliability + startupScore + provenSuccessBonus + recencyScore +
+            stableWatchBonus - repeatedFailurePenalty - quickExitPenalty
     }
 
     @Synchronized
@@ -133,6 +147,37 @@ object IptvRouteHealthStore {
         write(trim(health))
     }
 
+    @Synchronized
+    fun markStableWatch(
+        url: String,
+        watchedMs: Long,
+        now: Long = System.currentTimeMillis(),
+    ) {
+        if (watchedMs <= 0L) return
+        val health = read()
+        val previous = health[url] ?: IptvRouteHealth()
+        val sample = watchedMs.coerceAtMost(30 * 60 * 1000L)
+        val recoveredQuickExits = (sample / (2 * 60 * 1000L)).toInt().coerceAtLeast(1)
+        health[url] = previous.copy(
+            stableWatchMs = (previous.stableWatchMs + sample).coerceAtMost(maxLearnedWatchMs),
+            quickExitCount = (previous.quickExitCount - recoveredQuickExits).coerceAtLeast(0),
+            lastSuccessAt = maxOf(previous.lastSuccessAt, now),
+            lastWatchAt = now,
+        )
+        write(trim(health))
+    }
+
+    @Synchronized
+    fun markQuickExit(url: String, now: Long = System.currentTimeMillis()) {
+        val health = read()
+        val previous = health[url] ?: IptvRouteHealth()
+        health[url] = previous.copy(
+            quickExitCount = (previous.quickExitCount + 1).coerceAtMost(10),
+            lastWatchAt = now,
+        )
+        write(trim(health))
+    }
+
     private fun isCoolingDown(health: IptvRouteHealth?, now: Long): Boolean {
         if (health == null || health.consecutiveFailures == 0) return false
         if (health.lastSuccessAt > health.lastFailureAt) return false
@@ -163,7 +208,9 @@ object IptvRouteHealthStore {
     private fun trim(value: MutableMap<String, IptvRouteHealth>): Map<String, IptvRouteHealth> {
         if (value.size <= maxEntries) return value
         return value.entries
-            .sortedByDescending { maxOf(it.value.lastSuccessAt, it.value.lastFailureAt) }
+            .sortedByDescending {
+                maxOf(it.value.lastSuccessAt, it.value.lastFailureAt, it.value.lastWatchAt)
+            }
             .take(maxEntries)
             .associate { it.toPair() }
     }

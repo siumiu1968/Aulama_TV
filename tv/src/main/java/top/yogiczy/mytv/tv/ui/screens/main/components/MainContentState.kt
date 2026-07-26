@@ -10,6 +10,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine   // 1. 新增
@@ -37,12 +38,18 @@ import top.yogiczy.mytv.tv.ui.screens.videoplayer.VideoPlayerState
 import top.yogiczy.mytv.tv.ui.screens.videoplayer.rememberVideoPlayerState
 import top.yogiczy.mytv.tv.ui.utils.IptvDisplayCapabilities
 import top.yogiczy.mytv.tv.ui.utils.IptvRouteHealthStore
+import top.yogiczy.mytv.tv.ui.utils.IptvRoutePriorityStore
+import top.yogiczy.mytv.tv.ui.utils.mergeRouteAttemptOrder
 import top.yogiczy.mytv.tv.ui.utils.orderRoutesForDisplay
 import java.net.URI
 import java.text.SimpleDateFormat
 import java.util.Locale
 import kotlin.math.max
 import kotlin.math.min
+
+private const val STABLE_WATCH_SAMPLE_MS = 60_000L
+private const val STABLE_WATCH_FINAL_CREDIT_MS = 45_000L
+private const val QUICK_ROUTE_EXIT_MS = 25_000L
 
 @Stable
 class MainContentState(
@@ -64,6 +71,10 @@ class MainContentState(
     private var routeAttemptOrder = emptyList<Int>()
     private var routeAttemptCursor = 0
     private var routeStartedAt = 0L
+    private var routeFirstFrameAt = 0L
+    private var routeWatchCreditedMs = 0L
+    private var routeSuccessRecorded = false
+    private var stableWatchLearningJob: Job? = null
     private var lastFailureHandledUrl: String? = null
     private val supportsHdrOutput by lazy {
         IptvDisplayCapabilities.supportsHdrOutput(context)
@@ -139,6 +150,7 @@ class MainContentState(
                 val receiver = object : BroadcastReceiver() {
                     override fun onReceive(ctx: Context, intent: Intent) {
                         if (intent.action == "top.yogiczy.mytv.tv.RESTART_PLAY") {
+                            finishCurrentWatchSession()
                             prepareCurrentRoute()
                         }
                     }
@@ -157,11 +169,17 @@ class MainContentState(
 
         videoPlayerState.onFirstFrame {
             val route = currentRouteOrNull() ?: return@onFirstFrame
-            IptvRouteHealthStore.markSuccess(
-                route.url,
-                System.currentTimeMillis() - routeStartedAt,
-                playbackMode = videoPlayerState.playbackMode,
-            )
+            if (!routeSuccessRecorded) {
+                val now = System.currentTimeMillis()
+                routeSuccessRecorded = true
+                routeFirstFrameAt = now
+                IptvRouteHealthStore.markSuccess(
+                    route.url,
+                    now - routeStartedAt,
+                    playbackMode = videoPlayerState.playbackMode,
+                )
+                startStableWatchLearning(route.url)
+            }
             settingsViewModel.iptvPlayableHostList += getUrlHost(route.url)
             coroutineScope.launch {
                 val name = _currentChannel.name
@@ -179,6 +197,7 @@ class MainContentState(
             val failedRoute = currentRouteOrNull() ?: return@onPlaybackDegraded
             if (lastFailureHandledUrl == failedRoute.url) return@onPlaybackDegraded
             lastFailureHandledUrl = failedRoute.url
+            finishCurrentWatchSession()
             IptvRouteHealthStore.markFailure(failedRoute.url)
             settingsViewModel.iptvPlayableHostList -= getUrlHost(failedRoute.url)
 
@@ -197,6 +216,7 @@ class MainContentState(
             val failedRoute = currentRouteOrNull() ?: return@onError false
             if (lastFailureHandledUrl == failedRoute.url) return@onError false
             lastFailureHandledUrl = failedRoute.url
+            finishCurrentWatchSession()
             IptvRouteHealthStore.markFailure(failedRoute.url)
             settingsViewModel.iptvPlayableHostList -= getUrlHost(failedRoute.url)
 
@@ -211,6 +231,7 @@ class MainContentState(
 
         videoPlayerState.onInterrupt {
             currentRouteOrNull()?.let {
+                finishCurrentWatchSession()
                 IptvRouteHealthStore.markFailure(it.url)
                 settingsViewModel.iptvPlayableHostList -= getUrlHost(it.url)
             }
@@ -293,20 +314,62 @@ class MainContentState(
     private fun currentRouteOrNull(): ChannelRoute? =
         _currentChannel.routes.getOrNull(_currentChannelUrlIdx)
 
+    private fun startStableWatchLearning(url: String) {
+        stableWatchLearningJob?.cancel()
+        stableWatchLearningJob = coroutineScope.launch {
+            while (currentRouteOrNull()?.url == url) {
+                delay(STABLE_WATCH_SAMPLE_MS)
+                if (
+                    currentRouteOrNull()?.url == url &&
+                    videoPlayerState.hasRenderedFirstFrame &&
+                    videoPlayerState.isPlaying &&
+                    !videoPlayerState.isBuffering
+                ) {
+                    IptvRouteHealthStore.markStableWatch(url, STABLE_WATCH_SAMPLE_MS)
+                    routeWatchCreditedMs += STABLE_WATCH_SAMPLE_MS
+                }
+            }
+        }
+    }
+
+    private fun finishCurrentWatchSession(quickExit: Boolean = false) {
+        stableWatchLearningJob?.cancel()
+        stableWatchLearningJob = null
+        val route = currentRouteOrNull()
+        if (route != null && routeFirstFrameAt > 0L) {
+            val watchedMs = (System.currentTimeMillis() - routeFirstFrameAt).coerceAtLeast(0L)
+            val uncreditedMs = (watchedMs - routeWatchCreditedMs).coerceAtLeast(0L)
+            if (uncreditedMs >= STABLE_WATCH_FINAL_CREDIT_MS) {
+                IptvRouteHealthStore.markStableWatch(route.url, uncreditedMs)
+            }
+            if (quickExit && watchedMs in 1 until QUICK_ROUTE_EXIT_MS) {
+                IptvRouteHealthStore.markQuickExit(route.url)
+            }
+        }
+        routeFirstFrameAt = 0L
+        routeWatchCreditedMs = 0L
+        routeSuccessRecorded = false
+    }
+
     private fun buildRouteAttemptOrder(
         channel: Channel,
         requestedIndex: Int?,
     ): List<Int> {
         if (channel.routes.isEmpty()) return emptyList()
-        val remembered = getUrlIdx(channel.urlList, requestedIndex)
+        val requested = requestedIndex?.let { getUrlIdx(channel.urlList, it) }
         val ranked = IptvRouteHealthStore.rankedIndices(channel.routes)
-
-        // 明確手動揀線時先尊重該線；自動換台則使用本機歷史表現及畫質排序。
-        return orderRoutesForDisplay(
+        val automaticOrder = orderRoutesForDisplay(
             routes = channel.routes,
             rankedIndices = ranked,
-            requestedIndex = remembered.takeIf { requestedIndex != null },
+            requestedIndex = null,
             supportsHdrOutput = supportsHdrOutput,
+        )
+
+        return mergeRouteAttemptOrder(
+            routes = channel.routes,
+            priorityUrls = IptvRoutePriorityStore.priorities(channel.name),
+            automaticIndices = automaticOrder,
+            requestedIndex = requested,
         )
     }
 
@@ -316,7 +379,11 @@ class MainContentState(
         val manuallyRequested4k = requestedIndex != null &&
             channel.routes.getOrNull(getUrlIdx(channel.urlList, requestedIndex))
                 ?.quality == ChannelQuality.UHD_4K
-        if (manuallyRequested4k) {
+        val manuallyPrioritized4k = requestedIndex == null &&
+            IptvRoutePriorityStore.priorities(channel.name)
+                .firstNotNullOfOrNull { url -> channel.routes.firstOrNull { it.url == url } }
+                ?.quality == ChannelQuality.UHD_4K
+        if (manuallyRequested4k || manuallyPrioritized4k) {
             Snackbar.show("呢部電視未支援 HDR，4K 顏色可能偏淡")
             return
         }
@@ -336,6 +403,11 @@ class MainContentState(
 
     private fun prepareCurrentRoute(retrying: Boolean = false) {
         val baseRoute = currentRouteOrNull() ?: return
+        stableWatchLearningJob?.cancel()
+        stableWatchLearningJob = null
+        routeFirstFrameAt = 0L
+        routeWatchCreditedMs = 0L
+        routeSuccessRecorded = false
         var route = baseRoute
 
         _currentPlaybackEpgProgramme?.let { programme ->
@@ -352,8 +424,14 @@ class MainContentState(
         _isTempChannelScreenVisible = true
         routeStartedAt = System.currentTimeMillis()
         lastFailureHandledUrl = null
+        val priorityRank = IptvRoutePriorityStore.priorities(_currentChannel.name)
+            .indexOf(baseRoute.url)
+            .takeIf { it >= 0 }
+            ?.plus(1)
+        val selectionLabel = priorityRank?.let { "優先$it" } ?: "自動線路"
         log.d(
-            "播放${_currentChannel.name}（${baseRoute.quality.label}，自動線路${_currentChannelUrlIdx + 1}/${_currentChannel.routes.size}）: ${route.url}"
+            "播放${_currentChannel.name}（${baseRoute.quality.label}，$selectionLabel，" +
+                "線路${_currentChannelUrlIdx + 1}/${_currentChannel.routes.size}）: ${route.url}"
         )
 
         if (ChannelUtil.isHybridWebViewUrl(route.url)) {
@@ -389,6 +467,12 @@ class MainContentState(
             playbackEpgProgramme == _currentPlaybackEpgProgramme
         ) return
 
+        val isManualRouteChange = !retrying &&
+            channel.name == _currentChannel.name &&
+            urlIdx != null &&
+            getUrlIdx(channel.urlList, urlIdx) != _currentChannelUrlIdx
+        finishCurrentWatchSession(quickExit = isManualRouteChange)
+
         _currentChannel = channel
         settingsViewModel.iptvLastChannelIdx =
             channelGroupListProvider().channelIdx(_currentChannel)
@@ -422,6 +506,7 @@ class MainContentState(
     }
 
     fun refreshCurrentChannel() {
+        finishCurrentWatchSession()
         prepareCurrentRoute()
     }
 

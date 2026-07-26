@@ -212,7 +212,7 @@ class VideoPlayerState(
 
     private fun reportPlaybackDegraded(reason: String) {
         if (degradedReported || !hasRenderedFirstFrame) return
-        if (tryPlaybackModeFallback()) return
+        if (attemptedPlaybackModes.size == 1 && tryPlaybackModeFallback()) return
         degradedReported = true
         bufferingHealthJob?.cancel()
         onPlaybackDegradedListeners.forEach { it(reason) }

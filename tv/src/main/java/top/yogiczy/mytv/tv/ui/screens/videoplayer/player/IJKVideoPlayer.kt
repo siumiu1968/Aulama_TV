@@ -20,7 +20,7 @@ import top.yogiczy.mytv.core.data.utils.Logger
 import top.yogiczy.mytv.tv.ui.utils.Configs
 
 private const val PLAYBACK_HEALTH_MIN_PROGRESS_MS = 1_500L
-private const val PLAYBACK_HEALTH_BAD_SAMPLE_LIMIT = 3
+private const val PLAYBACK_HEALTH_BAD_SAMPLE_LIMIT = 2
 private const val PLAYBACK_HEALTH_MAX_AV_DRIFT_SECONDS = 0.12f
 
 internal fun isPlaybackHealthUnhealthy(

@@ -81,6 +81,34 @@ class IptvRouteHealthStoreTest {
         assertEquals(listOf(0, 1), IptvRouteHealthStore.rankedIndices(routes, health, now))
     }
 
+    @Test
+    fun `long stable viewing raises route score within the same quality`() {
+        val routes = listOf(
+            route("brief", ChannelQuality.FULL_HD, 0),
+            route("long", ChannelQuality.FULL_HD, 1),
+        )
+        val health = mapOf(
+            "brief" to successfulHealth(successCount = 2, startupMs = 900),
+            "long" to successfulHealth(successCount = 2, startupMs = 1_200).copy(
+                stableWatchMs = 35 * 60 * 1000L,
+            ),
+        )
+
+        assertEquals(listOf(1, 0), IptvRouteHealthStore.rankedIndices(routes, health, now))
+    }
+
+    @Test
+    fun `repeated quick exits lower route score without forcing cooldown`() {
+        val stable = successfulHealth(successCount = 2, startupMs = 1_200)
+        val abandoned = stable.copy(quickExitCount = 3)
+
+        assertEquals(
+            true,
+            IptvRouteHealthStore.performanceScore(stable) >
+                IptvRouteHealthStore.performanceScore(abandoned),
+        )
+    }
+
     private fun route(url: String, quality: ChannelQuality, sourceOrder: Int) = ChannelRoute(
         url = url,
         quality = quality,
