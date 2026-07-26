@@ -32,6 +32,8 @@ import top.yogiczy.mytv.tv.ui.screens.videoplayer.player.Media3VideoPlayer
 import top.yogiczy.mytv.tv.ui.screens.videoplayer.player.VideoPlayer
 import top.yogiczy.mytv.tv.ui.utils.Configs
 import top.yogiczy.mytv.tv.ui.utils.IptvPlaybackMode
+import top.yogiczy.mytv.tv.ui.utils.IptvPlaybackHealthPolicy
+import top.yogiczy.mytv.tv.ui.utils.IptvPlaybackHealthWindow
 
 
 @Stable
@@ -56,6 +58,10 @@ class VideoPlayerState(
     private var fourKFallbackRouteUrl: String? = null
     private val attemptedPlaybackModes = mutableSetOf<IptvPlaybackMode>()
     private var bufferingHealthJob: Job? = null
+    private var firstFrameHealthJob: Job? = null
+    private var ratioHealthJob: Job? = null
+    private var playbackHealthWindow: IptvPlaybackHealthWindow =
+        IptvPlaybackHealthPolicy.start(0L)
     private var degradedReported = false
     private var isAppForeground = false
     private val recentRebuffers = mutableListOf<Long>()
@@ -126,7 +132,7 @@ class VideoPlayerState(
         }
         attemptedPlaybackModes.clear()
         playbackGeneration += 1
-        bufferingHealthJob?.cancel()
+        resetPlaybackHealthWindow()
         recentRebuffers.clear()
         degradedReported = false
         currentRoute = route
@@ -163,12 +169,25 @@ class VideoPlayerState(
     fun stop() {
         playbackGeneration += 1
         bufferingHealthJob?.cancel()
+        firstFrameHealthJob?.cancel()
+        ratioHealthJob?.cancel()
         recentRebuffers.clear()
         hasRenderedFirstFrame = false
         isBuffering = false
         error = null
         retryMessage = null
         instance.stop()
+    }
+
+    fun showRetryNotice(message: String) {
+        error = null
+        retryMessage = message
+        isBuffering = true
+    }
+
+    fun keepCurrentRoute() {
+        retryMessage = null
+        error = null
     }
 
     fun setVideoSurfaceView(surfaceView: SurfaceView) {
@@ -211,11 +230,45 @@ class VideoPlayerState(
     }
 
     private fun reportPlaybackDegraded(reason: String) {
-        if (degradedReported || !hasRenderedFirstFrame) return
+        if (degradedReported) return
         if (attemptedPlaybackModes.size == 1 && tryPlaybackModeFallback()) return
         degradedReported = true
         bufferingHealthJob?.cancel()
+        firstFrameHealthJob?.cancel()
+        ratioHealthJob?.cancel()
+        error = null
+        retryMessage = "自動切換線路中"
         onPlaybackDegradedListeners.forEach { it(reason) }
+    }
+
+    private fun resetPlaybackHealthWindow() {
+        firstFrameHealthJob?.cancel()
+        ratioHealthJob?.cancel()
+        val generation = playbackGeneration
+        playbackHealthWindow = IptvPlaybackHealthPolicy.start(System.currentTimeMillis())
+        firstFrameHealthJob = coroutineScope.launch {
+            delay(IptvPlaybackHealthPolicy.firstFrameTimeoutMs)
+            if (generation != playbackGeneration || hasRenderedFirstFrame) return@launch
+            IptvPlaybackHealthPolicy.evaluate(
+                playbackHealthWindow,
+                System.currentTimeMillis(),
+            )?.let { reportPlaybackDegraded(IptvPlaybackHealthPolicy.reasonCode(it)) }
+        }
+    }
+
+    private fun scheduleBufferRatioEvaluation() {
+        ratioHealthJob?.cancel()
+        val generation = playbackGeneration
+        ratioHealthJob = coroutineScope.launch {
+            delay(IptvPlaybackHealthPolicy.bufferRatioWindowMs)
+            while (generation == playbackGeneration && !degradedReported) {
+                IptvPlaybackHealthPolicy.evaluate(
+                    playbackHealthWindow,
+                    System.currentTimeMillis(),
+                )?.let { reportPlaybackDegraded(IptvPlaybackHealthPolicy.reasonCode(it)) }
+                delay(5_000L)
+            }
+        }
     }
 
     private fun tryPlaybackModeFallback(): Boolean {
@@ -242,6 +295,7 @@ class VideoPlayerState(
 
         playbackGeneration += 1
         bufferingHealthJob?.cancel()
+        resetPlaybackHealthWindow()
         recentRebuffers.clear()
         degradedReported = false
         hasRenderedFirstFrame = false
@@ -414,26 +468,25 @@ class VideoPlayerState(
         instance.onBuffering {
             isBuffering = it
             if (it) error = null
-            bufferingHealthJob?.cancel()
-            if (it && hasRenderedFirstFrame && !degradedReported) {
-                val now = System.currentTimeMillis()
-                recentRebuffers.removeAll { sample -> now - sample > 25_000L }
-                recentRebuffers += now
-                if (recentRebuffers.size >= 2) {
-                    reportPlaybackDegraded("repeated-rebuffer")
-                } else {
-                    val generation = playbackGeneration
-                    bufferingHealthJob = coroutineScope.launch {
-                        delay(3_200L)
-                        if (generation == playbackGeneration && isBuffering) {
-                            reportPlaybackDegraded("long-rebuffer")
-                        }
-                    }
+            val now = System.currentTimeMillis()
+            playbackHealthWindow = IptvPlaybackHealthPolicy.onBuffering(
+                playbackHealthWindow,
+                buffering = it,
+                nowMs = now,
+            )
+            IptvPlaybackHealthPolicy.evaluate(playbackHealthWindow, now)
+                ?.let { reason ->
+                    reportPlaybackDegraded(IptvPlaybackHealthPolicy.reasonCode(reason))
                 }
-            }
         }
         instance.onPrepared { }
         instance.onFirstFrame {
+            firstFrameHealthJob?.cancel()
+            playbackHealthWindow = IptvPlaybackHealthPolicy.onFirstFrame(
+                playbackHealthWindow,
+                System.currentTimeMillis(),
+            )
+            scheduleBufferRatioEvaluation()
             hasRenderedFirstFrame = true
             isBuffering = false
             error = null
@@ -448,7 +501,15 @@ class VideoPlayerState(
         instance.onCurrentPositionChanged { currentPosition = it }
         instance.onMetadata { metadata = it }
         instance.onInterrupt { onInterruptListeners.forEach { it.invoke() } }
-        instance.onPlaybackDegraded(::reportPlaybackDegraded)
+        instance.onPlaybackDegraded {
+            val now = System.currentTimeMillis()
+            playbackHealthWindow = IptvPlaybackHealthPolicy.onExternalStall(
+                playbackHealthWindow,
+                now,
+            )
+            IptvPlaybackHealthPolicy.evaluate(playbackHealthWindow, now)
+                ?.let { reason -> reportPlaybackDegraded(IptvPlaybackHealthPolicy.reasonCode(reason)) }
+        }
     }
 
     fun initialize() {
@@ -476,6 +537,8 @@ class VideoPlayerState(
         onInterruptListeners.clear()
         onPlaybackDegradedListeners.clear()
         bufferingHealthJob?.cancel()
+        firstFrameHealthJob?.cancel()
+        ratioHealthJob?.cancel()
         instance.release()
     }
 }

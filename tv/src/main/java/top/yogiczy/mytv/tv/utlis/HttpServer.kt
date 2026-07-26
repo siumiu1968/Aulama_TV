@@ -27,6 +27,7 @@ import top.yogiczy.mytv.tv.ui.material.Snackbar
 import top.yogiczy.mytv.tv.ui.material.SnackbarType
 import top.yogiczy.mytv.tv.ui.screens.videoplayer.VideoPlayerDisplayMode
 import top.yogiczy.mytv.tv.ui.utils.Configs
+import top.yogiczy.mytv.tv.account.AulamaTvSync
 import java.io.File
 import java.net.Inet4Address
 import java.net.NetworkInterface
@@ -159,6 +160,7 @@ object HttpServer : Loggable() {
         newIptvSource?.let {
             Configs.iptvSourceList = IptvSourceList(Configs.iptvSourceList + it)
             Configs.iptvSourceCurrent = it
+            AulamaTvSync.notifyLocalChange()
         }
 
         wrapResponse(response).send("success")
@@ -266,6 +268,7 @@ object HttpServer : Loggable() {
         Configs.iptvChannelFavoriteEnable = configs.iptvChannelFavoriteEnable
         Configs.iptvChannelFavoriteListVisible = configs.iptvChannelFavoriteListVisible
         Configs.iptvChannelFavoriteList = configs.iptvChannelFavoriteList
+        AulamaTvSync.notifyLocalChange()
         Configs.iptvChannelFavoriteChangeBoundaryJumpOut =
             configs.iptvChannelFavoriteChangeBoundaryJumpOut
         Configs.iptvChannelGroupHiddenList = configs.iptvChannelGroupHiddenList

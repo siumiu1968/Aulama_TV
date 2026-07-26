@@ -10,6 +10,7 @@ import androidx.compose.material.icons.filled.Http
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.LiveTv
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SmartDisplay
 import androidx.compose.material.icons.filled.Star
@@ -21,6 +22,7 @@ enum class SettingsCategories(
     val title: String
 ) {
     ABOUT(Icons.Default.Info, "關於"),
+    ACCOUNT(Icons.Default.AccountCircle, "Aulama ID"),
     APP(Icons.Default.Settings, "一般"),
     IPTV(Icons.Default.LiveTv, "直播來源"),
     EPG(Icons.Default.Menu, "節目指南"),

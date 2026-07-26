@@ -7,6 +7,8 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.launch
 import top.yogiczy.mytv.core.data.entities.epg.EpgProgrammeReserveList
 import top.yogiczy.mytv.core.data.entities.epgsource.EpgSource
 import top.yogiczy.mytv.core.data.entities.epgsource.EpgSourceList
@@ -14,6 +16,7 @@ import top.yogiczy.mytv.core.data.entities.iptvsource.IptvSource
 import top.yogiczy.mytv.core.data.entities.iptvsource.IptvSourceList
 import top.yogiczy.mytv.tv.ui.screens.videoplayer.VideoPlayerDisplayMode
 import top.yogiczy.mytv.tv.ui.utils.Configs
+import top.yogiczy.mytv.tv.account.AulamaTvSync
 
 class SettingsViewModel : ViewModel() {
     var onVideoPlayerTypeChanged: ((Configs.VideoPlayerType) -> Unit)? = null
@@ -128,6 +131,7 @@ class SettingsViewModel : ViewModel() {
         set(value) {
             _iptvSourceList = value
             Configs.iptvSourceList = value
+            AulamaTvSync.notifyLocalChange()
         }
 
     private var _iptvPlayableHostList by mutableStateOf(Configs.iptvPlayableHostList)
@@ -168,6 +172,7 @@ class SettingsViewModel : ViewModel() {
         set(value) {
             _iptvChannelFavoriteList = value
             Configs.iptvChannelFavoriteList = value
+            AulamaTvSync.notifyLocalChange()
         }
 
     private var _iptvChannelFavoriteChangeBoundaryJumpOut by mutableStateOf(Configs.iptvChannelFavoriteChangeBoundaryJumpOut)
@@ -402,6 +407,12 @@ class SettingsViewModel : ViewModel() {
                 System.currentTimeMillis() < it.startAt + 60 * 1000
             }
         )
+        viewModelScope.launch {
+            AulamaTvSync.appliedVersion.collect {
+                _iptvSourceList = Configs.iptvSourceList
+                _iptvChannelFavoriteList = Configs.iptvChannelFavoriteList
+            }
+        }
     }
 
     fun refresh() {

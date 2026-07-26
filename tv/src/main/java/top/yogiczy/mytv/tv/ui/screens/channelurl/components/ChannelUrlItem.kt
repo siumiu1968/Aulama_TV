@@ -1,5 +1,6 @@
 package top.yogiczy.mytv.tv.ui.screens.channelurl.components
 
+import android.view.KeyEvent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -17,7 +18,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -34,9 +38,7 @@ import top.yogiczy.mytv.core.data.utils.ChannelUtil
 import top.yogiczy.mytv.core.util.utils.isIPv6
 import top.yogiczy.mytv.tv.ui.material.Tag
 import top.yogiczy.mytv.tv.ui.theme.MyTVTheme
-import top.yogiczy.mytv.tv.ui.utils.focusOnLaunchedSaveable
-import top.yogiczy.mytv.tv.ui.utils.handleKeyEvents
-import top.yogiczy.mytv.tv.ui.utils.ifElse
+import top.yogiczy.mytv.tv.ui.utils.saveRequestFocus
 import java.io.IOException
 import kotlin.system.measureTimeMillis
 
@@ -54,17 +56,21 @@ fun ChannelUrlItem(
     val urlIdx = urlIdxProvider()
     val isSelected = isSelectedProvider()
     val priorityRank = priorityRankProvider()
-    var isRowFocused by remember { mutableStateOf(false) }
+    val rowFocusRequester = remember(url) { FocusRequester() }
+    val priorityFocusRequester = remember(url) { FocusRequester() }
 
     val urlDelay = rememberUrlDelay(url)
 
+    LaunchedEffect(isSelected) {
+        if (isSelected) rowFocusRequester.saveRequestFocus()
+    }
+
     ListItem(
         modifier = modifier
-            .ifElse(isSelected, Modifier.focusOnLaunchedSaveable())
-            .onFocusChanged { isRowFocused = it.isFocused }
-            .handleKeyEvents(onSelect = { if (isRowFocused) onSelected() }),
+            .focusRequester(rowFocusRequester)
+            .focusProperties { right = priorityFocusRequester },
         selected = false,
-        onClick = {},
+        onClick = onSelected,
         headlineContent = {
             Row(
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -96,8 +102,24 @@ fun ChannelUrlItem(
                 IconButton(
                     modifier = Modifier
                         .size(36.dp)
-                        .handleKeyEvents(onSelect = onPriorityToggle),
-                    onClick = {},
+                        .focusRequester(priorityFocusRequester)
+                        .focusProperties {
+                            left = rowFocusRequester
+                        }
+                        .onPreviewKeyEvent { event ->
+                            val isSelectKey = event.nativeKeyEvent.keyCode in setOf(
+                                KeyEvent.KEYCODE_DPAD_CENTER,
+                                KeyEvent.KEYCODE_ENTER,
+                                KeyEvent.KEYCODE_NUMPAD_ENTER,
+                            )
+                            if (!isSelectKey) return@onPreviewKeyEvent false
+
+                            if (event.nativeKeyEvent.action == KeyEvent.ACTION_UP) {
+                                onPriorityToggle()
+                            }
+                            true
+                        },
+                    onClick = onPriorityToggle,
                 ) {
                     Icon(
                         imageVector = if (priorityRank == null) {

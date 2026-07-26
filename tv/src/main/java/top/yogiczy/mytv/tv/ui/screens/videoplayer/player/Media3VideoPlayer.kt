@@ -47,6 +47,7 @@ import top.yogiczy.mytv.core.data.entities.channel.ChannelRoute
 import top.yogiczy.mytv.core.data.network.OkHttp
 import top.yogiczy.mytv.core.data.utils.Logger
 import top.yogiczy.mytv.tv.ui.utils.Configs
+import top.yogiczy.mytv.tv.account.aulamaRequestHeaders
 import java.util.concurrent.TimeUnit
 
 @OptIn(UnstableApi::class)
@@ -150,8 +151,9 @@ class Media3VideoPlayer(
             context,
             OkHttpDataSource.Factory(mediaHttpClient).apply {
                 setUserAgent(Configs.videoPlayerUserAgent)
-                if (route.requestHeaders.isNotEmpty()) {
-                    setDefaultRequestProperties(route.requestHeaders)
+                val requestHeaders = route.aulamaRequestHeaders()
+                if (requestHeaders.isNotEmpty()) {
+                    setDefaultRequestProperties(requestHeaders)
                 }
             },
         )

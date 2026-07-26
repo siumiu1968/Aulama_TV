@@ -4,7 +4,14 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.compose)
+    alias(libs.plugins.kotlin.serialization)
 }
+
+val googleWebClientId = providers.gradleProperty("AULAMA_GOOGLE_WEB_CLIENT_ID")
+    .orElse("")
+    .get()
+    .replace("\\", "\\\\")
+    .replace("\"", "\\\"")
 
 android {
     @Suppress("UNCHECKED_CAST")
@@ -17,11 +24,16 @@ android {
         applicationId = "org.aulama.iptv"
         minSdk = libs.versions.minSdk.get().toInt()
         targetSdk = libs.versions.targetSdk.get().toInt()
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 3
+        versionName = "1.1.1"
 
         vectorDrawables.useSupportLibrary = true
         ndk.abiFilters.addAll(listOf("armeabi-v7a", "arm64-v8a"))
+        buildConfigField(
+            "String",
+            "AULAMA_GOOGLE_WEB_CLIENT_ID",
+            "\"$googleWebClientId\"",
+        )
     }
 
     buildTypes {
@@ -43,7 +55,10 @@ android {
     }
 
     kotlinOptions.jvmTarget = "1.8"
-    buildFeatures.compose = true
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
 
     packaging.resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
 }
@@ -65,16 +80,29 @@ dependencies {
     implementation(libs.androidx.media3.exoplayer)
     implementation(libs.androidx.media3.exoplayer.hls)
     implementation(libs.androidx.media3.exoplayer.rtsp)
+    implementation(libs.androidx.media3.datasource.okhttp)
     implementation(libs.androidx.media3.ui)
+
+    implementation(libs.androidx.credentials)
+    implementation(libs.androidx.credentials.play.services.auth)
+    implementation(libs.googleid)
+
+    implementation(libs.androidx.camera.core)
+    implementation(libs.androidx.camera.camera2)
+    implementation(libs.androidx.camera.lifecycle)
+    implementation(libs.androidx.camera.view)
+    implementation(libs.zxing.core)
 
     implementation(libs.coil.compose)
     implementation(libs.okhttp)
     implementation(libs.kotlinx.collections.immutable)
+    implementation(libs.kotlinx.serialization)
 
     implementation(project(":core:data"))
     implementation(project(":core:util"))
 
     debugImplementation(libs.androidx.ui.tooling)
+    testImplementation(libs.junit)
     coreLibraryDesugaring(libs.desugar.jdk.libs)
 }
 

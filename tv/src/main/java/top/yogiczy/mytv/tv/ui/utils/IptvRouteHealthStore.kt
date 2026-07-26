@@ -6,6 +6,7 @@ import top.yogiczy.mytv.core.data.entities.channel.ChannelRoute
 import top.yogiczy.mytv.core.data.utils.SP
 import java.net.URI
 import kotlin.math.min
+import kotlin.math.pow
 import kotlin.math.roundToLong
 
 data class IptvRouteHealth(
@@ -19,6 +20,10 @@ data class IptvRouteHealth(
     val lastFailureAt: Long = 0,
     val lastWatchAt: Long = 0,
     val preferredPlaybackMode: String? = null,
+    val successEwma: Double? = null,
+    val bufferRatioEwma: Double? = null,
+    val fatalErrorCount: Int = 0,
+    val lastUpdatedAt: Long = 0,
 )
 
 enum class IptvPlaybackMode {
@@ -36,8 +41,10 @@ object IptvRouteHealthStore {
     private const val key = "IPTV_ROUTE_HEALTH_V2"
     private const val playbackProfileKey = "IPTV_PLAYBACK_PROFILE"
     private const val playbackProfile = "IJK_AC3_HEALTH_V2"
-    private const val shortCooldownMs = 30 * 60 * 1000L
-    private const val longCooldownMs = 2 * 60 * 60 * 1000L
+    private const val initialCooldownMs = 2 * 60 * 1000L
+    private const val maxCooldownMs = 30 * 60 * 1000L
+    private const val decayHalfLifeMs = 7 * 24 * 60 * 60 * 1000L
+    private const val switchScoreMargin = 20.0
     private const val maxLearnedWatchMs = 12 * 60 * 60 * 1000L
     private const val maxEntries = 250
     private val autoDeprioritizedHosts = setOf("120.234.44.98")
@@ -48,63 +55,95 @@ object IptvRouteHealthStore {
     fun rankedIndices(
         routes: List<ChannelRoute>,
         now: Long = System.currentTimeMillis(),
-    ): List<Int> = rankedIndices(routes, read(), now)
+        supports4k: Boolean = true,
+    ): List<Int> = rankedIndices(routes, read(), now, supports4k)
 
     internal fun rankedIndices(
         routes: List<ChannelRoute>,
         health: Map<String, IptvRouteHealth>,
         now: Long,
+        supports4k: Boolean = true,
     ): List<Int> {
         return routes.indices.sortedWith(
-            compareByDescending<Int> { index -> routes[index].quality.rank }
-                .thenBy { index -> if (isCoolingDown(health[routes[index].url], now)) 1 else 0 }
-                .thenBy { index -> autoSelectionPenalty(routes[index].url) }
-                .thenByDescending { index -> performanceScore(health[routes[index].url]) }
+            compareBy<Int> { index -> if (isCoolingDown(health[routes[index].url], now)) 1 else 0 }
+                .thenByDescending { index ->
+                    performanceScore(
+                        health = health[routes[index].url],
+                        now = now,
+                        quality = routes[index].quality,
+                        supports4k = supports4k,
+                    ) - autoSelectionPenalty(routes[index].url)
+                }
                 .thenBy { index -> routes[index].sourceOrder }
         )
     }
 
-    internal fun autoSelectionPenalty(url: String): Int {
+    internal fun autoSelectionPenalty(url: String): Double {
         val host = runCatching { URI(url).host }.getOrNull()
-        return if (host in autoDeprioritizedHosts) 1 else 0
+        return if (host in autoDeprioritizedHosts) 28.0 else 0.0
     }
 
-    internal fun performanceScore(health: IptvRouteHealth?): Double {
-        if (health == null) return 50.0
+    internal fun performanceScore(
+        health: IptvRouteHealth?,
+        now: Long = System.currentTimeMillis(),
+        quality: top.yogiczy.mytv.core.data.entities.channel.ChannelQuality =
+            top.yogiczy.mytv.core.data.entities.channel.ChannelQuality.UNKNOWN,
+        supports4k: Boolean = true,
+    ): Double {
+        val qualityBonus = if (
+            supports4k &&
+            quality == top.yogiczy.mytv.core.data.entities.channel.ChannelQuality.UHD_4K
+        ) 12.0 else 0.0
+        if (health == null) return 50.0 + qualityBonus
 
-        // Beta(2, 2) 先驗令未測試線路保持中性，少量樣本不會過度影響排序。
         val observations = health.successCount + health.failureCount
-        val reliability = (health.successCount + 2.0) / (observations + 4.0) * 100.0
-        val startupScore = if (health.averageStartupMs == 0L) {
+        val betaSuccess = (health.successCount + 2.0) / (observations + 4.0)
+        val success = health.successEwma?.takeIf { it in 0.0..1.0 } ?: betaSuccess
+        val successScore = (success - 0.5) * 80.0
+        val startupScore = if (health.averageStartupMs <= 0L) {
             0.0
         } else {
-            ((8_000L - health.averageStartupMs) / 700.0).coerceIn(-12.0, 10.0)
+            ((2_000L - health.averageStartupMs) / 350.0).coerceIn(-22.0, 5.0)
         }
-        val provenSuccessBonus = min(health.successCount, 5) * 1.5
-        val recencyScore = when {
-            health.lastSuccessAt > health.lastFailureAt -> 8.0
-            health.lastFailureAt > health.lastSuccessAt -> -8.0
-            else -> 0.0
-        }
-        val repeatedFailurePenalty = min(health.consecutiveFailures, 3) * 12.0
-        val stableWatchBonus = when {
-            health.stableWatchMs >= 60 * 60 * 1000L -> 30.0
-            health.stableWatchMs >= 30 * 60 * 1000L -> 24.0
-            health.stableWatchMs >= 10 * 60 * 1000L -> 16.0
-            health.stableWatchMs >= 3 * 60 * 1000L -> 9.0
-            health.stableWatchMs >= 60 * 1000L -> 4.0
-            else -> 0.0
-        }
+        val stableMinutes = health.stableWatchMs / 60_000.0
+        val stableWatchBonus = min(30.0, stableMinutes * 0.75)
+        val bufferPenalty = (health.bufferRatioEwma ?: 0.0).coerceIn(0.0, 1.0) * 120.0
+        val fatalPenalty = min(health.fatalErrorCount, 3) * 18.0
+        val repeatedFailurePenalty = min(health.consecutiveFailures, 5) * 9.0
         val quickExitPenalty = min(health.quickExitCount, 4) * 6.0
+        val lastActivity = maxOf(
+            health.lastUpdatedAt,
+            health.lastSuccessAt,
+            health.lastFailureAt,
+            health.lastWatchAt,
+        )
+        val ageMs = (now - lastActivity).coerceAtLeast(0L)
+        val decay = 0.5.pow(ageMs.toDouble() / decayHalfLifeMs)
 
-        return reliability + startupScore + provenSuccessBonus + recencyScore +
-            stableWatchBonus - repeatedFailurePenalty - quickExitPenalty
+        val evidence = successScore + startupScore + stableWatchBonus - bufferPenalty -
+            fatalPenalty - repeatedFailurePenalty - quickExitPenalty
+        return 50.0 + qualityBonus + evidence * decay
     }
+
+    internal fun cooldownDurationMs(consecutiveFailures: Int): Long {
+        if (consecutiveFailures <= 0) return 0L
+        val multiplier = 1L shl (consecutiveFailures - 1).coerceAtMost(4)
+        return (initialCooldownMs * multiplier).coerceAtMost(maxCooldownMs)
+    }
+
+    internal fun shouldAutoSwitch(
+        currentScore: Double,
+        candidateScore: Double,
+        currentUnavailable: Boolean = false,
+    ): Boolean = currentUnavailable || candidateScore >= currentScore + switchScoreMargin
 
     @Synchronized
     fun preferredPlaybackMode(url: String): IptvPlaybackMode? = read()[url]
         ?.preferredPlaybackMode
         ?.let { value -> runCatching { IptvPlaybackMode.valueOf(value) }.getOrNull() }
+
+    @Synchronized
+    internal fun healthFor(url: String): IptvRouteHealth? = read()[url]
 
     @Synchronized
     fun markSuccess(
@@ -127,6 +166,8 @@ object IptvRouteHealthStore {
             averageStartupMs = average,
             lastSuccessAt = now,
             preferredPlaybackMode = playbackMode?.name ?: previous.preferredPlaybackMode,
+            successEwma = ewma(previous.successEwma, 1.0),
+            lastUpdatedAt = now,
         )
         write(trim(health))
     }
@@ -143,6 +184,32 @@ object IptvRouteHealthStore {
             preferredPlaybackMode = previous.preferredPlaybackMode.takeIf {
                 consecutiveFailures < 2
             },
+            successEwma = ewma(previous.successEwma, 0.0),
+            fatalErrorCount = previous.fatalErrorCount + 1,
+            lastUpdatedAt = now,
+        )
+        write(trim(health))
+    }
+
+    @Synchronized
+    fun markDegraded(
+        url: String,
+        reason: String,
+        now: Long = System.currentTimeMillis(),
+    ) {
+        val health = read()
+        val previous = health[url] ?: IptvRouteHealth()
+        val ratio = reason.substringAfter("buffer-ratio:", "")
+            .toDoubleOrNull()
+            ?.coerceIn(0.0, 1.0)
+        health[url] = previous.copy(
+            failureCount = previous.failureCount + 1,
+            consecutiveFailures = previous.consecutiveFailures + 1,
+            lastFailureAt = now,
+            successEwma = ewma(previous.successEwma, 0.25),
+            bufferRatioEwma = ratio?.let { ewma(previous.bufferRatioEwma, it) }
+                ?: previous.bufferRatioEwma,
+            lastUpdatedAt = now,
         )
         write(trim(health))
     }
@@ -163,6 +230,7 @@ object IptvRouteHealthStore {
             quickExitCount = (previous.quickExitCount - recoveredQuickExits).coerceAtLeast(0),
             lastSuccessAt = maxOf(previous.lastSuccessAt, now),
             lastWatchAt = now,
+            lastUpdatedAt = now,
         )
         write(trim(health))
     }
@@ -174,16 +242,20 @@ object IptvRouteHealthStore {
         health[url] = previous.copy(
             quickExitCount = (previous.quickExitCount + 1).coerceAtMost(10),
             lastWatchAt = now,
+            lastUpdatedAt = now,
         )
         write(trim(health))
     }
 
-    private fun isCoolingDown(health: IptvRouteHealth?, now: Long): Boolean {
+    internal fun isCoolingDown(health: IptvRouteHealth?, now: Long): Boolean {
         if (health == null || health.consecutiveFailures == 0) return false
         if (health.lastSuccessAt > health.lastFailureAt) return false
-        val duration = if (health.consecutiveFailures >= 2) longCooldownMs else shortCooldownMs
+        val duration = cooldownDurationMs(health.consecutiveFailures)
         return now < health.lastFailureAt + duration
     }
+
+    private fun ewma(previous: Double?, sample: Double): Double =
+        previous?.let { it * 0.72 + sample * 0.28 } ?: sample
 
     private fun read(): MutableMap<String, IptvRouteHealth> = try {
         val json = SP.getString(key, "{}")

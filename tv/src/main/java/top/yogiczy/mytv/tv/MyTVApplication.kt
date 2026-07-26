@@ -8,12 +8,14 @@ import coil.memory.MemoryCache
 import coil.request.CachePolicy
 import top.yogiczy.mytv.core.data.AppData
 import top.yogiczy.mytv.core.data.network.OkHttp
+import top.yogiczy.mytv.tv.account.AulamaAccount
 
 class MyTVApplication : Application(), ImageLoaderFactory {
     override fun onCreate() {
         super.onCreate()
 
         AppData.init(applicationContext)
+        AulamaAccount.initialize(applicationContext)
         UnsafeTrustManager.enableUnsafeTrustManager()
     }
 

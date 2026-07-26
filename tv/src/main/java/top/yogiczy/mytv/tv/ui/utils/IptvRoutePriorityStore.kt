@@ -4,6 +4,7 @@ import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import top.yogiczy.mytv.core.data.entities.channel.ChannelRoute
 import top.yogiczy.mytv.core.data.utils.SP
+import top.yogiczy.mytv.tv.account.AulamaTvSync
 
 object IptvRoutePriorityStore {
     private const val key = "IPTV_ROUTE_PRIORITIES_V1"
@@ -33,7 +34,23 @@ object IptvRoutePriorityStore {
             all[channelName] = current
         }
         write(all.entries.toList().takeLast(maxChannels).associate { it.toPair() })
+        AulamaTvSync.notifyLocalChange()
         return current
+    }
+
+    @Synchronized
+    fun snapshot(): Map<String, List<String>> = read()
+        .mapValues { (_, urls) -> urls.distinct().take(32) }
+
+    @Synchronized
+    fun replaceAll(value: Map<String, List<String>>, notifySync: Boolean = true) {
+        val normalized = value.entries
+            .filter { it.key.isNotBlank() }
+            .takeLast(maxChannels)
+            .associate { (channel, urls) -> channel to urls.distinct().take(32) }
+            .filterValues { it.isNotEmpty() }
+        write(normalized)
+        if (notifySync) AulamaTvSync.notifyLocalChange()
     }
 
     private fun read(): LinkedHashMap<String, MutableList<String>> = try {

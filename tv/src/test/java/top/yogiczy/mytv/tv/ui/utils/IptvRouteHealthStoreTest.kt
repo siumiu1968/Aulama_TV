@@ -1,6 +1,7 @@
 package top.yogiczy.mytv.tv.ui.utils
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import top.yogiczy.mytv.core.data.entities.channel.ChannelQuality
 import top.yogiczy.mytv.core.data.entities.channel.ChannelRoute
@@ -9,7 +10,7 @@ class IptvRouteHealthStoreTest {
     private val now = 10_000_000L
 
     @Test
-    fun `healthy 4K route is preferred over proven 1080p route`() {
+    fun `4K gets a capability bonus only when output supports it`() {
         val routes = listOf(
             route("1080", ChannelQuality.FULL_HD, 0),
             route("4k", ChannelQuality.UHD_4K, 1),
@@ -19,11 +20,19 @@ class IptvRouteHealthStoreTest {
             "4k" to successfulHealth(successCount = 1, startupMs = 4_000),
         )
 
-        assertEquals(listOf(1, 0), IptvRouteHealthStore.rankedIndices(routes, health, now))
+        assertEquals(listOf(0, 1), IptvRouteHealthStore.rankedIndices(routes, health, now, false))
+        assertEquals(
+            true,
+            IptvRouteHealthStore.performanceScore(
+                health["4k"], now, ChannelQuality.UHD_4K, true,
+            ) > IptvRouteHealthStore.performanceScore(
+                health["4k"], now, ChannelQuality.UHD_4K, false,
+            ),
+        )
     }
 
     @Test
-    fun `4K route remains first priority while cooling`() {
+    fun `cooling route is placed behind a usable candidate`() {
         val routes = listOf(
             route("4k", ChannelQuality.UHD_4K, 0),
             route("1080", ChannelQuality.FULL_HD, 1),
@@ -37,11 +46,11 @@ class IptvRouteHealthStoreTest {
             "1080" to successfulHealth(successCount = 2, startupMs = 1_500),
         )
 
-        assertEquals(listOf(0, 1), IptvRouteHealthStore.rankedIndices(routes, health, now))
+        assertEquals(listOf(1, 0), IptvRouteHealthStore.rankedIndices(routes, health, now))
     }
 
     @Test
-    fun `past performance selects the best route within the same quality`() {
+    fun `past performance selects the best route and leaves a poor route behind unknown`() {
         val routes = listOf(
             route("unknown", ChannelQuality.FULL_HD, 0),
             route("slow", ChannelQuality.FULL_HD, 1),
@@ -52,7 +61,7 @@ class IptvRouteHealthStoreTest {
             "fast" to successfulHealth(successCount = 4, startupMs = 1_200),
         )
 
-        assertEquals(listOf(2, 1, 0), IptvRouteHealthStore.rankedIndices(routes, health, now))
+        assertEquals(listOf(2, 0, 1), IptvRouteHealthStore.rankedIndices(routes, health, now))
     }
 
     @Test
@@ -104,9 +113,37 @@ class IptvRouteHealthStoreTest {
 
         assertEquals(
             true,
-            IptvRouteHealthStore.performanceScore(stable) >
-                IptvRouteHealthStore.performanceScore(abandoned),
+            IptvRouteHealthStore.performanceScore(stable, now) >
+                IptvRouteHealthStore.performanceScore(abandoned, now),
         )
+    }
+
+    @Test
+    fun `failure cooldown starts at two minutes and caps at thirty`() {
+        assertEquals(2 * 60 * 1000L, IptvRouteHealthStore.cooldownDurationMs(1))
+        assertEquals(4 * 60 * 1000L, IptvRouteHealthStore.cooldownDurationMs(2))
+        assertEquals(30 * 60 * 1000L, IptvRouteHealthStore.cooldownDurationMs(8))
+    }
+
+    @Test
+    fun `seven day decay moves learned evidence toward neutral`() {
+        val health = successfulHealth(successCount = 12, startupMs = 600).copy(
+            successEwma = 0.95,
+            stableWatchMs = 60 * 60 * 1000L,
+            lastUpdatedAt = now,
+        )
+        val fresh = IptvRouteHealthStore.performanceScore(health, now)
+        val old = IptvRouteHealthStore.performanceScore(health, now + 28L * 24 * 60 * 60 * 1000)
+
+        assertTrue(fresh > old)
+        assertTrue(kotlin.math.abs(old - 50.0) < kotlin.math.abs(fresh - 50.0))
+    }
+
+    @Test
+    fun `automatic switch requires twenty point advantage unless current is unavailable`() {
+        assertEquals(false, IptvRouteHealthStore.shouldAutoSwitch(50.0, 69.9))
+        assertEquals(true, IptvRouteHealthStore.shouldAutoSwitch(50.0, 70.0))
+        assertEquals(true, IptvRouteHealthStore.shouldAutoSwitch(90.0, 10.0, true))
     }
 
     private fun route(url: String, quality: ChannelQuality, sourceOrder: Int) = ChannelRoute(

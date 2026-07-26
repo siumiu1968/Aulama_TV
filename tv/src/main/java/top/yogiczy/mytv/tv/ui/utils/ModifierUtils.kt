@@ -65,25 +65,31 @@ fun Modifier.handleKeyEvents(
     val keyDownMap = mutableMapOf<Int, Boolean>()
 
     return onPreviewKeyEvent {
+        val keyCode = it.nativeKeyEvent.keyCode
+        val hasHandler = onKeyTap[keyCode] != null || onKeyLongTap[keyCode] != null
+        if (!hasHandler) return@onPreviewKeyEvent false
+
         when (it.nativeKeyEvent.action) {
             KeyEvent.ACTION_DOWN -> {
                 if (it.nativeKeyEvent.repeatCount == 0) {
-                    keyDownMap[it.nativeKeyEvent.keyCode] = true
+                    keyDownMap[keyCode] = true
                 } else if (it.nativeKeyEvent.repeatCount == 1) {
-                    keyDownMap.remove(it.nativeKeyEvent.keyCode)
-                    onKeyLongTap[it.nativeKeyEvent.keyCode]?.invoke()
+                    keyDownMap.remove(keyCode)
+                    onKeyLongTap[keyCode]?.invoke()
                 }
+                true
             }
 
             KeyEvent.ACTION_UP -> {
-                if (keyDownMap[it.nativeKeyEvent.keyCode] == true) {
-                    keyDownMap.remove(it.nativeKeyEvent.keyCode)
-                    onKeyTap[it.nativeKeyEvent.keyCode]?.invoke()
+                if (keyDownMap[keyCode] == true) {
+                    keyDownMap.remove(keyCode)
+                    onKeyTap[keyCode]?.invoke()
                 }
+                true
             }
-        }
 
-        false
+            else -> false
+        }
     }
 }
 

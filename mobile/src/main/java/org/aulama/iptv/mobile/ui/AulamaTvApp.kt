@@ -42,7 +42,10 @@ import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.LiveTv
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.SignalCellularAlt
+import androidx.compose.material.icons.rounded.Star
+import androidx.compose.material.icons.rounded.StarBorder
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Divider
@@ -73,6 +76,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -94,13 +98,22 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.aulama.iptv.mobile.MobileMainViewModel
 import org.aulama.iptv.mobile.MobileUiState
+import org.aulama.iptv.mobile.PairingApprovalState
 import org.aulama.iptv.mobile.R
 import org.aulama.iptv.mobile.RegionChannels
 import org.aulama.iptv.mobile.SelectedChannel
+import org.aulama.iptv.mobile.data.auth.AulamaAccountState
+import org.aulama.iptv.mobile.data.playback.PlaybackCandidate
+import org.aulama.iptv.mobile.ui.account.AccountScreen
+import org.aulama.iptv.mobile.ui.onboarding.WelcomeScreen
+import org.aulama.iptv.mobile.ui.pairing.PairingCode
+import org.aulama.iptv.mobile.ui.pairing.PairingConfirmationScreen
+import org.aulama.iptv.mobile.ui.pairing.QrScannerScreen
 import org.aulama.iptv.mobile.ui.player.DirectPlayerState
 import org.aulama.iptv.mobile.ui.player.DirectVideoPlayer
 import org.aulama.iptv.mobile.ui.player.PlaybackStatus
 import org.aulama.iptv.mobile.ui.player.rememberDirectPlayerState
+import org.aulama.iptv.mobile.ui.settings.SettingsScreen
 import top.yogiczy.mytv.core.data.entities.channel.Channel
 import top.yogiczy.mytv.core.data.entities.channel.ChannelRoute
 
@@ -108,6 +121,15 @@ private data class BrowserChannel(
     val region: String,
     val channel: Channel,
 )
+
+private enum class MobileDestination {
+    WELCOME,
+    HOME,
+    SETTINGS,
+    ACCOUNT,
+    SCANNER,
+    PAIRING_CONFIRMATION,
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -120,6 +142,12 @@ fun AulamaTvApp(viewModel: MobileMainViewModel) {
     val favoritesOnly by viewModel.favoritesOnly.collectAsState()
     val favorites by viewModel.favorites.collectAsState()
     val darkTheme by viewModel.darkTheme.collectAsState()
+    val onboardingCompleted by viewModel.onboardingCompleted.collectAsState()
+    val accountState by viewModel.accountState.collectAsState()
+    val syncState by viewModel.syncState.collectAsState()
+    val pairingState by viewModel.pairingState.collectAsState()
+    val playbackCandidates by viewModel.playbackCandidates.collectAsState()
+    val selectedCandidateIndex by viewModel.selectedCandidateIndex.collectAsState()
 
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -127,6 +155,27 @@ fun AulamaTvApp(viewModel: MobileMainViewModel) {
     var initialSplashFinished by remember { mutableStateOf(false) }
     var fullscreen by remember { mutableStateOf(false) }
     var showRouteSheet by remember { mutableStateOf(false) }
+    var destinationName by rememberSaveable {
+        mutableStateOf(
+            if (viewModel.onboardingCompleted.value) {
+                MobileDestination.HOME.name
+            } else {
+                MobileDestination.WELCOME.name
+            }
+        )
+    }
+    var accountReturnName by rememberSaveable {
+        mutableStateOf(MobileDestination.WELCOME.name)
+    }
+    var pendingPairingCode by rememberSaveable { mutableStateOf<String?>(null) }
+    val destination = remember(destinationName) {
+        runCatching { MobileDestination.valueOf(destinationName) }
+            .getOrDefault(MobileDestination.HOME)
+    }
+
+    fun navigate(destination: MobileDestination) {
+        destinationName = destination.name
+    }
 
     LaunchedEffect(Unit) {
         delay(900)
@@ -139,19 +188,150 @@ fun AulamaTvApp(viewModel: MobileMainViewModel) {
         }
     }
 
+    LaunchedEffect(onboardingCompleted, destination) {
+        if (onboardingCompleted && destination == MobileDestination.WELCOME) {
+            navigate(MobileDestination.HOME)
+        }
+    }
+
+    LaunchedEffect(accountState) {
+        if (accountState is AulamaAccountState.SignedIn && !onboardingCompleted) {
+            viewModel.completeOnboarding()
+            navigate(MobileDestination.HOME)
+        } else if (
+            accountState is AulamaAccountState.SignedIn &&
+            destination == MobileDestination.ACCOUNT &&
+            accountReturnName == MobileDestination.PAIRING_CONFIRMATION.name
+        ) {
+            navigate(MobileDestination.PAIRING_CONFIRMATION)
+        }
+    }
+
     if (!initialSplashFinished) {
         AulamaLoadingScreen()
         return
     }
 
-    val currentRoute = selectedChannel?.channel?.routes?.getOrNull(selectedRouteIndex)
-    val playerState = rememberDirectPlayerState {
-        if (viewModel.tryNextRoute()) {
-            scope.launch { snackbarHostState.showSnackbar("目前線路不穩，已切換後備線路") }
-        } else {
-            scope.launch { snackbarHostState.showSnackbar("目前頻道所有線路暫時未能播放") }
+    BackHandler(
+        enabled = destination != MobileDestination.HOME &&
+            destination != MobileDestination.WELCOME,
+    ) {
+        when (destination) {
+            MobileDestination.SETTINGS -> navigate(MobileDestination.HOME)
+            MobileDestination.ACCOUNT -> {
+                navigate(
+                    runCatching { MobileDestination.valueOf(accountReturnName) }
+                        .getOrDefault(MobileDestination.SETTINGS)
+                )
+            }
+            MobileDestination.SCANNER -> navigate(MobileDestination.SETTINGS)
+            MobileDestination.PAIRING_CONFIRMATION -> navigate(MobileDestination.SCANNER)
+            else -> Unit
         }
     }
+
+    when (destination) {
+        MobileDestination.WELCOME -> {
+            WelcomeScreen(
+                onContinueAsGuest = {
+                    viewModel.completeOnboarding()
+                    navigate(MobileDestination.HOME)
+                },
+                onSignIn = {
+                    accountReturnName = MobileDestination.WELCOME.name
+                    navigate(MobileDestination.ACCOUNT)
+                },
+            )
+            return
+        }
+
+        MobileDestination.SETTINGS -> {
+            SettingsScreen(
+                darkTheme = darkTheme,
+                accountState = accountState,
+                syncState = syncState,
+                onToggleTheme = viewModel::toggleTheme,
+                onOpenAccount = {
+                    accountReturnName = MobileDestination.SETTINGS.name
+                    navigate(MobileDestination.ACCOUNT)
+                },
+                onOpenScanner = { navigate(MobileDestination.SCANNER) },
+                onBack = { navigate(MobileDestination.HOME) },
+            )
+            return
+        }
+
+        MobileDestination.ACCOUNT -> {
+            val returnDestination = runCatching {
+                MobileDestination.valueOf(accountReturnName)
+            }.getOrDefault(MobileDestination.SETTINGS)
+            AccountScreen(
+                accountState = accountState,
+                showGuestContinue = !onboardingCompleted,
+                onGoogleSignIn = viewModel::signInWithGoogle,
+                onPasskeySignIn = viewModel::signInWithPasskey,
+                onLogout = viewModel::logout,
+                onSyncNow = viewModel::syncNow,
+                onBack = { navigate(returnDestination) },
+                onContinueAsGuest = {
+                    viewModel.completeOnboarding()
+                    navigate(MobileDestination.HOME)
+                },
+            )
+            return
+        }
+
+        MobileDestination.SCANNER -> {
+            QrScannerScreen(
+                onPairingCodeDetected = {
+                    viewModel.resetPairingState()
+                    pendingPairingCode = it.value
+                    navigate(MobileDestination.PAIRING_CONFIRMATION)
+                },
+                onBack = { navigate(MobileDestination.SETTINGS) },
+            )
+            return
+        }
+
+        MobileDestination.PAIRING_CONFIRMATION -> {
+            val pairingCode = pendingPairingCode?.let(::PairingCode)
+            if (pairingCode == null) {
+                LaunchedEffect(Unit) { navigate(MobileDestination.SCANNER) }
+            } else {
+                PairingConfirmationScreen(
+                    pairingCode = pairingCode,
+                    accountState = accountState,
+                    approvalState = pairingState,
+                    onApprove = { viewModel.approvePairing(pairingCode.value) },
+                    onSignIn = {
+                        accountReturnName = MobileDestination.PAIRING_CONFIRMATION.name
+                        navigate(MobileDestination.ACCOUNT)
+                    },
+                    onScanAgain = { navigate(MobileDestination.SCANNER) },
+                    onDone = {
+                        viewModel.resetPairingState()
+                        pendingPairingCode = null
+                        navigate(MobileDestination.SETTINGS)
+                    },
+                )
+            }
+            return
+        }
+
+        MobileDestination.HOME -> Unit
+    }
+
+    val currentCandidate = playbackCandidates.getOrNull(selectedCandidateIndex)
+    val playerState = rememberDirectPlayerState(
+        onPlaybackFailure = {
+            if (viewModel.tryNextRoute()) {
+                scope.launch { snackbarHostState.showSnackbar("目前線路不穩，已切換後備線路") }
+            } else {
+                scope.launch { snackbarHostState.showSnackbar("目前頻道所有線路暫時未能播放") }
+            }
+        },
+        onHealthSample = viewModel::recordPlaybackSample,
+    )
 
     FullscreenSystemUi(enabled = fullscreen)
     BackHandler(enabled = fullscreen) { fullscreen = false }
@@ -159,7 +339,7 @@ fun AulamaTvApp(viewModel: MobileMainViewModel) {
     if (fullscreen) {
         DirectVideoPlayer(
             state = playerState,
-            route = currentRoute,
+            candidate = currentCandidate,
             channelName = selectedChannel?.channel?.name.orEmpty(),
             fullscreen = true,
             onToggleFullscreen = { fullscreen = false },
@@ -173,6 +353,7 @@ fun AulamaTvApp(viewModel: MobileMainViewModel) {
                     loading = uiState is MobileUiState.Loading,
                     onToggleTheme = viewModel::toggleTheme,
                     onRefresh = viewModel::refresh,
+                    onOpenSettings = { navigate(MobileDestination.SETTINGS) },
                 )
             },
             snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -194,7 +375,7 @@ fun AulamaTvApp(viewModel: MobileMainViewModel) {
                             uiState = uiState,
                             playerState = playerState,
                             selectedChannel = selectedChannel,
-                            currentRoute = currentRoute,
+                            currentCandidate = currentCandidate,
                             selectedRouteIndex = selectedRouteIndex,
                             selectedRegion = selectedRegion,
                             query = query,
@@ -209,7 +390,7 @@ fun AulamaTvApp(viewModel: MobileMainViewModel) {
                             uiState = uiState,
                             playerState = playerState,
                             selectedChannel = selectedChannel,
-                            currentRoute = currentRoute,
+                            currentCandidate = currentCandidate,
                             selectedRouteIndex = selectedRouteIndex,
                             selectedRegion = selectedRegion,
                             query = query,
@@ -233,6 +414,14 @@ fun AulamaTvApp(viewModel: MobileMainViewModel) {
                 viewModel.selectRoute(it)
                 showRouteSheet = false
             },
+            priorityRank = { routeUrl ->
+                viewModel.routePriorityRank(
+                    selectedChannel!!.region,
+                    selectedChannel!!.channel,
+                    routeUrl,
+                )
+            },
+            onTogglePriority = viewModel::toggleRoutePriority,
             onDismiss = { showRouteSheet = false },
         )
     }
@@ -317,6 +506,7 @@ private fun AulamaTopBar(
     loading: Boolean,
     onToggleTheme: () -> Unit,
     onRefresh: () -> Unit,
+    onOpenSettings: () -> Unit,
 ) {
     TopAppBar(
         title = {
@@ -330,6 +520,9 @@ private fun AulamaTopBar(
             )
         },
         actions = {
+            IconButton(onClick = onOpenSettings) {
+                Icon(Icons.Rounded.Settings, contentDescription = "設定")
+            }
             IconButton(onClick = onToggleTheme) {
                 Icon(
                     imageVector = if (darkTheme) Icons.Rounded.LightMode else Icons.Rounded.DarkMode,
@@ -352,7 +545,7 @@ private fun PhoneLayout(
     uiState: MobileUiState,
     playerState: DirectPlayerState,
     selectedChannel: SelectedChannel?,
-    currentRoute: ChannelRoute?,
+    currentCandidate: PlaybackCandidate?,
     selectedRouteIndex: Int,
     selectedRegion: String,
     query: String,
@@ -365,7 +558,7 @@ private fun PhoneLayout(
     Column(Modifier.fillMaxSize()) {
         DirectVideoPlayer(
             state = playerState,
-            route = currentRoute,
+            candidate = currentCandidate,
             channelName = selectedChannel?.channel?.name.orEmpty(),
             fullscreen = false,
             onToggleFullscreen = onFullscreen,
@@ -376,7 +569,7 @@ private fun PhoneLayout(
         )
         NowPlayingStrip(
             selectedChannel = selectedChannel,
-            route = currentRoute,
+            route = currentCandidate?.route,
             routeIndex = selectedRouteIndex,
             status = playerState.status,
             onShowRoutes = onShowRoutes,
@@ -400,7 +593,7 @@ private fun WideLayout(
     uiState: MobileUiState,
     playerState: DirectPlayerState,
     selectedChannel: SelectedChannel?,
-    currentRoute: ChannelRoute?,
+    currentCandidate: PlaybackCandidate?,
     selectedRouteIndex: Int,
     selectedRegion: String,
     query: String,
@@ -423,7 +616,7 @@ private fun WideLayout(
         ) {
             DirectVideoPlayer(
                 state = playerState,
-                route = currentRoute,
+                candidate = currentCandidate,
                 channelName = selectedChannel?.channel?.name.orEmpty(),
                 fullscreen = false,
                 onToggleFullscreen = onFullscreen,
@@ -433,7 +626,7 @@ private fun WideLayout(
             )
             NowPlayingStrip(
                 selectedChannel = selectedChannel,
-                route = currentRoute,
+                route = currentCandidate?.route,
                 routeIndex = selectedRouteIndex,
                 status = playerState.status,
                 onShowRoutes = onShowRoutes,
@@ -765,6 +958,8 @@ private fun RouteSheet(
     selectedChannel: SelectedChannel,
     selectedRouteIndex: Int,
     onSelectRoute: (Int) -> Unit,
+    priorityRank: (String) -> Int?,
+    onTogglePriority: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
@@ -782,6 +977,7 @@ private fun RouteSheet(
         )
         Spacer(Modifier.height(12.dp))
         selectedChannel.channel.routes.forEachIndexed { index, route ->
+            val rank = priorityRank(route.url)
             Surface(
                 onClick = { onSelectRoute(index) },
                 color = if (selectedRouteIndex == index)
@@ -801,7 +997,7 @@ private fun RouteSheet(
                         onClick = null,
                     )
                     Spacer(Modifier.width(8.dp))
-                    Column {
+                    Column(Modifier.weight(1f)) {
                         Text(
                             text = route.label.ifBlank { "線路 ${index + 1}" },
                             style = MaterialTheme.typography.bodyLarge,
@@ -811,6 +1007,22 @@ private fun RouteSheet(
                             text = "${route.quality.label} · 線路 ${index + 1}",
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    IconButton(onClick = { onTogglePriority(route.url) }) {
+                        Icon(
+                            imageVector = if (rank == null) Icons.Rounded.StarBorder else Icons.Rounded.Star,
+                            contentDescription = if (rank == null) "設為優先" else "取消優先 $rank",
+                            tint = if (rank == null) MaterialTheme.colorScheme.onSurfaceVariant
+                            else MaterialTheme.colorScheme.tertiary,
+                        )
+                    }
+                    if (rank != null) {
+                        Text(
+                            text = rank.toString(),
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.tertiary,
+                            modifier = Modifier.width(20.dp),
                         )
                     }
                 }

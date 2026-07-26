@@ -18,6 +18,7 @@ import tv.danmaku.ijk.media.player.IMediaPlayer
 import tv.danmaku.ijk.media.player.IjkMediaPlayer
 import top.yogiczy.mytv.core.data.utils.Logger
 import top.yogiczy.mytv.tv.ui.utils.Configs
+import top.yogiczy.mytv.tv.account.aulamaRequestHeaders
 
 private const val PLAYBACK_HEALTH_MIN_PROGRESS_MS = 1_500L
 private const val PLAYBACK_HEALTH_BAD_SAMPLE_LIMIT = 2
@@ -349,7 +350,7 @@ class IJKVideoPlayer(
             ijkPlayer.reset()
             setOption()
             currentSurface?.takeIf(Surface::isValid)?.let(ijkPlayer::setSurface)
-            ijkPlayer.setDataSource(context, Uri.parse(route.url), route.requestHeaders)
+            ijkPlayer.setDataSource(context, Uri.parse(route.url), route.aulamaRequestHeaders())
             ijkPlayer.prepareAsync()
             triggerPrepared()
         } catch (e: Exception) {

@@ -20,6 +20,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -41,6 +42,8 @@ import top.yogiczy.mytv.tv.ui.material.Snackbar
 import top.yogiczy.mytv.tv.ui.material.SnackbarType
 import top.yogiczy.mytv.tv.ui.material.SnackbarUI
 import top.yogiczy.mytv.tv.ui.material.Visible
+import top.yogiczy.mytv.tv.account.AulamaAccount
+import top.yogiczy.mytv.tv.ui.screens.account.DevicePairingScreen
 import top.yogiczy.mytv.tv.ui.screens.agreement.AgreementScreen
 import top.yogiczy.mytv.tv.ui.screens.main.MainScreen
 import top.yogiczy.mytv.tv.ui.screens.settings.LocalSettings
@@ -60,6 +63,7 @@ fun App(
 
     val configuration = LocalConfiguration.current
     val doubleBackPressedExitState = rememberDoubleBackPressedExitState()
+    var showDevicePairing by rememberSaveable { mutableStateOf(false) }
 
     CompositionLocalProvider(
         LocalDensity provides Density(
@@ -75,20 +79,34 @@ fun App(
     ) {
         PopupHandleableApplication {
             if (settingsViewModel.appAgreementAgreed) {
-                MainScreen(
-                    modifier = modifier,
-                    onBackPressed = {
-                        if (doubleBackPressedExitState.allowExit) {
-                            onBackPressed()
-                        } else {
-                            doubleBackPressedExitState.backPress()
-                            Snackbar.show("再按一次退出")
-                        }
-                    },
-                )
+                if (showDevicePairing) {
+                    DevicePairingScreen(
+                        modifier = modifier,
+                        onClose = { showDevicePairing = false },
+                    )
+                } else {
+                    MainScreen(
+                        modifier = modifier,
+                        onBackPressed = {
+                            if (doubleBackPressedExitState.allowExit) {
+                                onBackPressed()
+                            } else {
+                                doubleBackPressedExitState.backPress()
+                                Snackbar.show("再按一次退出")
+                            }
+                        },
+                    )
+                }
             } else {
                 AgreementScreen(
-                    onAgree = { settingsViewModel.appAgreementAgreed = true },
+                    onAgreeAndLogin = {
+                        settingsViewModel.appAgreementAgreed = true
+                        showDevicePairing = true
+                    },
+                    onAgreeAsGuest = {
+                        AulamaAccount.manager.continueAsGuest()
+                        settingsViewModel.appAgreementAgreed = true
+                    },
                     onDisagree = { onBackPressed() },
                     onDisableUiFocusOptimize = { settingsViewModel.uiFocusOptimize = false },
                 )

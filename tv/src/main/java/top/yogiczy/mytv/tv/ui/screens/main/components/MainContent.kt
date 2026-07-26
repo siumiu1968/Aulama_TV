@@ -82,6 +82,13 @@ fun MainContent(
     val pendingSelectJob = remember { mutableStateOf<Job?>(null) }
 
     val lifecycleOwner = LocalLifecycleOwner.current
+    val hasBlockingOverlay = mainContentState.isChannelScreenVisible ||
+        mainContentState.isSettingsScreenVisible ||
+        mainContentState.isVideoPlayerControllerScreenVisible ||
+        mainContentState.isQuickOpScreenVisible ||
+        mainContentState.isEpgScreenVisible ||
+        mainContentState.isChannelUrlScreenVisible ||
+        mainContentState.isVideoPlayerDisplayModeScreenVisible
 
     // 監聽生命週期：從後台回到前台時立即刷新當前頻道
     DisposableEffect(lifecycleOwner) {
@@ -97,9 +104,10 @@ fun MainContent(
         }
     }
 
-    Box(
-        modifier = modifier
-            .popupable()
+    val globalInputModifier = if (hasBlockingOverlay) {
+        Modifier
+    } else {
+        Modifier
             .captureBackKey {
                 if(mainContentState.currentPlaybackEpgProgramme!=null){
                     mainContentState.changeCurrentChannel(mainContentState.currentChannel)
@@ -159,7 +167,13 @@ fun MainContent(
                     if (settingsViewModel.iptvChannelChangeFlip) mainContentState.changeCurrentChannelToPrev()
                     else mainContentState.changeCurrentChannelToNext()
                 },
-            ),
+            )
+    }
+
+    Box(
+        modifier = modifier
+            .popupable()
+            .then(globalInputModifier),
     ) {
         VideoPlayerScreen(
             state = videoPlayerState,

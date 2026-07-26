@@ -35,7 +35,8 @@ import top.yogiczy.mytv.tv.ui.utils.handleKeyEvents
 @Composable
 fun AgreementScreen(
     modifier: Modifier = Modifier,
-    onAgree: () -> Unit = {},
+    onAgreeAndLogin: () -> Unit = {},
+    onAgreeAsGuest: () -> Unit = {},
     onDisagree: () -> Unit = {},
     onDisableUiFocusOptimize: () -> Unit = {},
 ) {
@@ -55,7 +56,7 @@ fun AgreementScreen(
             LocalTextStyle provides MaterialTheme.typography.bodyLarge
         ) {
             LazyColumn(
-                modifier = Modifier.width(556.dp),
+                modifier = Modifier.width(760.dp),
                 contentPadding = PaddingValues(top = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
@@ -65,6 +66,7 @@ fun AgreementScreen(
                     "2. 本軟件不提供任何直播內容，所有直播內容均來自網絡。",
                     "3. 本軟件完全基於您個人意願使用，您應該對自己的使用行為和所有結果承擔全部責任。",
                     "4. 如果本軟件存在侵犯您的合法權益的情況，請及時與作者聯繫，作者將會及時刪除有關內容。",
+                    "5. Aulama ID 登入屬自選功能，不登入仍可使用基本播放功能。",
                     "如您繼續使用本軟件即代表您已完全理解並同意上述內容。",
                 )
 
@@ -80,11 +82,11 @@ fun AgreementScreen(
                         Button(
                             modifier = Modifier
                                 .focusOnLaunched()
-                                .handleKeyEvents(onSelect = onAgree)
+                                .handleKeyEvents(onSelect = onAgreeAndLogin)
                                 .pointerInput(Unit) {
                                     detectTapGestures(onTap = {
                                         onDisableUiFocusOptimize()
-                                        onAgree()
+                                        onAgreeAndLogin()
                                     })
                                 },
                             colors = ButtonDefaults.colors(
@@ -92,7 +94,26 @@ fun AgreementScreen(
                             ),
                             onClick = { },
                         ) {
-                            Text("已閲讀並同意")
+                            Text("同意並登入")
+                        }
+
+                        Spacer(modifier = Modifier.width(12.dp))
+
+                        Button(
+                            modifier = Modifier
+                                .handleKeyEvents(onSelect = onAgreeAsGuest)
+                                .pointerInput(Unit) {
+                                    detectTapGestures(onTap = {
+                                        onDisableUiFocusOptimize()
+                                        onAgreeAsGuest()
+                                    })
+                                },
+                            colors = ButtonDefaults.colors(
+                                containerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
+                            ),
+                            onClick = { },
+                        ) {
+                            Text("同意並以訪客使用")
                         }
 
                         Spacer(modifier = Modifier.width(12.dp))

@@ -17,6 +17,7 @@ import kotlinx.coroutines.launch
 import top.yogiczy.mytv.core.data.entities.channel.ChannelRoute
 import top.yogiczy.mytv.core.data.utils.Logger
 import top.yogiczy.mytv.tv.ui.utils.Configs
+import top.yogiczy.mytv.tv.account.aulamaRequestHeaders
 import java.net.URI
 
 private val LETV_LEGACY_HTTP_HDR_HOSTS = setOf(
@@ -157,7 +158,7 @@ class LeTvVideoPlayer(
             player.setScreenOnWhilePlaying(true)
             boundSurfaceView?.holder?.let(player::setDisplay)
             textureSurface?.let(player::setSurface)
-            val headers = HashMap(route.requestHeaders).apply {
+            val headers = HashMap(route.aulamaRequestHeaders()).apply {
                 putIfAbsent("User-Agent", Configs.videoPlayerUserAgent)
             }
             val playbackUrl = leTvLegacyHdrPlaybackUrl(route.url)

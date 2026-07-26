@@ -32,6 +32,7 @@ fun SettingsCategoryContent(
 
         when (currentCategory) {
             SettingsCategories.ABOUT -> SettingsCategoryAbout()
+            SettingsCategories.ACCOUNT -> SettingsCategoryAccount()
             SettingsCategories.APP -> SettingsCategoryApp()
             SettingsCategories.IPTV -> SettingsCategoryIptv(
                 channelGroupListProvider = channelGroupListProvider,
