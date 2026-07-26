@@ -19,9 +19,42 @@ import tv.danmaku.ijk.media.player.IjkMediaPlayer
 import top.yogiczy.mytv.core.data.utils.Logger
 import top.yogiczy.mytv.tv.ui.utils.Configs
 
+private const val PLAYBACK_HEALTH_MIN_PROGRESS_MS = 1_500L
+private const val PLAYBACK_HEALTH_BAD_SAMPLE_LIMIT = 3
+private const val PLAYBACK_HEALTH_MAX_AV_DRIFT_SECONDS = 0.12f
+
+internal fun isPlaybackHealthUnhealthy(
+    outputFps: Float,
+    decodeFps: Float,
+    progressDelta: Long,
+    minimumFps: Float,
+    hasObservedOutputFps: Boolean,
+    hasObservedDecodeFps: Boolean,
+    avDifferenceSeconds: Float = Float.NaN,
+): Boolean {
+    val positionStalled = progressDelta < PLAYBACK_HEALTH_MIN_PROGRESS_MS
+    val outputFpsAvailableNow = outputFps.isFinite() && outputFps > 0f
+    val decodeFpsAvailableNow = decodeFps.isFinite() && decodeFps > 0f
+    val outputTooLow = when {
+        outputFpsAvailableNow -> outputFps < minimumFps
+        hasObservedOutputFps && outputFps.isFinite() -> outputFps <= 0f
+        else -> false
+    }
+    val decodeTooLow = when {
+        decodeFpsAvailableNow -> decodeFps < minimumFps
+        hasObservedDecodeFps && decodeFps.isFinite() -> decodeFps <= 0f
+        else -> false
+    }
+
+    val avSyncDrifted = avDifferenceSeconds.isFinite() &&
+        kotlin.math.abs(avDifferenceSeconds) >= PLAYBACK_HEALTH_MAX_AV_DRIFT_SECONDS
+    return positionStalled || outputTooLow || decodeTooLow || avSyncDrifted
+}
+
 class IJKVideoPlayer(
     private val context: Context,
     private val coroutineScope: CoroutineScope,
+    private val forceSoftwareDecode: Boolean = false,
 ) : VideoPlayer(coroutineScope) {
     private val log = Logger.create(javaClass.simpleName)
 
@@ -33,21 +66,46 @@ class IJKVideoPlayer(
         IjkMediaPlayer()
     }
 
+    private val useSoftwareDecode: Boolean
+        get() = forceSoftwareDecode || (
+            Configs.videoPlayerForceSoftDecode &&
+                currentRoute?.quality != ChannelQuality.UHD_4K
+            )
+
     private fun setOption() {
         ijkPlayer.apply {
+            val softwareDecode = useSoftwareDecode
+            val isHls = currentRoute?.url
+                ?.substringBefore('?')
+                ?.endsWith(".m3u8", ignoreCase = true) == true
             val timeoutUs = Configs.videoPlayerLoadTimeout * 1_000L
+            val analyzeDurationUs = if (softwareDecode) 6_000_000L else 2_000_000L
+            val probeSize = if (softwareDecode) 4 * 1024 * 1024L else 1024 * 1024L
             setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "dns_cache_clear", 1)
             setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "dns_cache_timeout", 0)
             setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "http-detect-range-support", 0)
             setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "reconnect", 1)
+            setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "reconnect_streamed", 1)
+            if (!isHls) {
+                setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "seekable", 0)
+                setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "reconnect_at_eof", 1)
+            }
             setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "timeout", timeoutUs)
             setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "rw_timeout", timeoutUs)
-            setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "analyzemaxduration", 2_000_000L)
-            setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "analyzeduration", 2_000_000L)
-            setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "probesize", 1024 * 1024L)
-            setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "fflags", "fastseek")
+            setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "analyzemaxduration", analyzeDurationUs)
+            setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "analyzeduration", analyzeDurationUs)
+            setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "probesize", probeSize)
+            setOption(
+                IjkMediaPlayer.OPT_CATEGORY_FORMAT,
+                "fflags",
+                if (softwareDecode) "genpts+discardcorrupt" else "fastseek",
+            )
+            if (softwareDecode) {
+                setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "use_wallclock_as_timestamps", 1)
+                setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "correct_ts_overflow", 1)
+            }
             setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "allowed_extensions", "ALL")
-            if (Configs.videoPlayerForceSoftDecode)
+            if (softwareDecode)
                 setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "mediacodec", 0)
             else{
                 setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "mediacodec", 1)
@@ -57,20 +115,23 @@ class IJKVideoPlayer(
             }
             setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "protocol_whitelist", "crypto,file,http,https,tcp,tls,udp,rtmp,rtsp")
             setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "opensles", 0)
-            setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "framedrop", 1)
+            setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "framedrop", 5)
             // IJK defaults to 31fps and discards non-reference frames above it.
             setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "max-fps", 60)
-            setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "fast", 0)
+            setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "fast", 1)
             setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "start-on-prepared", 0)
-            setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "enable-accurate-seek", 1)
-            setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "sync-av-start", 1)
+            // 頻道全屬直播；精準 seek 及等候 A/V 同步會被異常 PTS 誘發，播一兩秒後黑畫面。
+            setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "enable-accurate-seek", 0)
+            setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "sync-av-start", 0)
 
             // rtsp設置 https://ffmpeg.org/ffmpeg-protocols.html#rtsp
             setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "rtsp_transport", "tcp")
             setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "rtsp_flags", "prefer_tcp")
-            setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "buffer_size", 1024 * 1024L)
-            setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "infbuf", 0)
-            setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "packet-buffering", 1)
+            // 直播串流要持續消耗封包，否則播放器會累積延遲，甚至出畫後再次黑屏。
+            setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "buffer_size", 256 * 1024L)
+            setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "flush_packets", 1)
+            setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "infbuf", 1)
+            setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "packet-buffering", 0)
 
             //https://www.cnblogs.com/Fitz/p/18537127
             // setOption(IjkMediaPlayer.OPT_CATEGORY_CODEC, "skip_loop_filter",0) //丟棄一些“無用”的數據包，例如AVI格式中的零大小數據包
@@ -118,7 +179,7 @@ class IJKVideoPlayer(
                 surface.setFrameRate(
                     frameRate,
                     Surface.FRAME_RATE_COMPATIBILITY_FIXED_SOURCE,
-                    Surface.CHANGE_FRAME_RATE_ONLY_IF_SEAMLESS,
+                    Surface.CHANGE_FRAME_RATE_ALWAYS,
                 )
             } else {
                 surface.setFrameRate(
@@ -136,6 +197,8 @@ class IJKVideoPlayer(
             delay(5_000L)
             var previousPosition = ijkPlayer.currentPosition
             var badSamples = 0
+            var hasObservedOutputFps = false
+            var hasObservedDecodeFps = false
             while (!playbackHealthReported) {
                 delay(3_000L)
                 if (!ijkPlayer.isPlaying) {
@@ -144,16 +207,37 @@ class IJKVideoPlayer(
                 }
                 val outputFps = ijkPlayer.videoOutputFramesPerSecond
                 val decodeFps = ijkPlayer.videoDecodeFramesPerSecond
+                val avDifference = ijkPlayer.avDifference
                 val position = ijkPlayer.currentPosition
                 val progressDelta = (position - previousPosition).coerceAtLeast(0L)
                 val minimumFps = if (currentRoute?.quality == ChannelQuality.UHD_4K) 16f else 8f
-                val unhealthy = (outputFps.isFinite() && outputFps > 0f && outputFps < minimumFps) ||
-                    (decodeFps.isFinite() && decodeFps > 0f && decodeFps < minimumFps && progressDelta < 1_500L)
+                val unhealthy = isPlaybackHealthUnhealthy(
+                    outputFps = outputFps,
+                    decodeFps = decodeFps,
+                    progressDelta = progressDelta,
+                    minimumFps = minimumFps,
+                    hasObservedOutputFps = hasObservedOutputFps,
+                    hasObservedDecodeFps = hasObservedDecodeFps,
+                    avDifferenceSeconds = avDifference,
+                )
+                hasObservedOutputFps = hasObservedOutputFps ||
+                    (outputFps.isFinite() && outputFps > 0f)
+                hasObservedDecodeFps = hasObservedDecodeFps ||
+                    (decodeFps.isFinite() && decodeFps > 0f)
                 badSamples = if (unhealthy) badSamples + 1 else 0
+                if (unhealthy) {
+                    log.w(
+                        "Playback health low: outputFps=$outputFps, " +
+                        "decodeFps=$decodeFps, progressDelta=$progressDelta, " +
+                            "avDifference=$avDifference, " +
+                            "outputTelemetry=$hasObservedOutputFps, " +
+                            "decodeTelemetry=$hasObservedDecodeFps, samples=$badSamples",
+                    )
+                }
                 previousPosition = position
-                if (badSamples >= 2) {
+                if (badSamples >= PLAYBACK_HEALTH_BAD_SAMPLE_LIMIT) {
                     playbackHealthReported = true
-                    triggerPlaybackDegraded("low-output-fps")
+                    triggerPlaybackDegraded("ijk-playback-unhealthy")
                 }
             }
         }
@@ -166,6 +250,14 @@ class IJKVideoPlayer(
         IMediaPlayer.OnCompletionListener {
         
         override fun onPrepared(mp: IMediaPlayer?) {
+            val mediaInfo = runCatching { ijkPlayer.mediaInfo }.getOrNull()
+            val audioStream = mediaInfo?.mMeta?.mAudioStream
+            if (audioStream != null && mediaInfo.mAudioDecoder.isNullOrBlank()) {
+                val codec = audioStream.mCodecName ?: "unknown"
+                log.w("IJK audio decoder unavailable for $codec; trying compatible player")
+                triggerError(PlaybackException("AUDIO_DECODER_UNAVAILABLE", 10004))
+                return
+            }
             updateFrameRateHint()
             triggerReady()
             if (canStartPlayback) play()
@@ -293,15 +385,8 @@ class IJKVideoPlayer(
     }
 
     override fun seekTo(position: Long) {
-//        ijkPlayer.seekTo(position)
-        // 對於直播流（duration <= 0），seek操作不僅無效，還可能導致播放器狀態異常。
-        // 增加保護，只對點播視頻執行seek。
-        if (ijkPlayer.duration > 0) {
-            log.d("Seeking to $position")
-            ijkPlayer.seekTo(position)
-        } else {
-            log.w("Seek is ignored for live streams.")
-        }
+        // 部分 MPEG-TS 直播會將 PTS 誤報成 duration；對它 seek 會造成無限重試及黑畫面。
+        log.w("Seek is ignored for live channel: position=$position")
     }
 
     override fun stop() {

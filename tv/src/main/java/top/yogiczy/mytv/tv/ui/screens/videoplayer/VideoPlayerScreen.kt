@@ -103,6 +103,7 @@ fun VideoPlayerScreen(
         showMetadataProvider = showMetadataProvider,
         metadataProvider = state::metadata,
         errorProvider = state::error,
+        retryMessageProvider = state::retryMessage,
     )
 }
 
@@ -112,6 +113,7 @@ private fun VideoPlayerScreenCover(
     showMetadataProvider: () -> Boolean = { false },
     metadataProvider: () -> VideoPlayer.Metadata = { VideoPlayer.Metadata() },
     errorProvider: () -> String? = { null },
+    retryMessageProvider: () -> String? = { null },
 ) {
     val childPadding = rememberChildPadding()
 
@@ -126,6 +128,7 @@ private fun VideoPlayerScreenCover(
         VideoPlayerError(
             modifier = Modifier.align(Alignment.Center),
             errorProvider = errorProvider,
+            retryMessageProvider = retryMessageProvider,
         )
     }
 }

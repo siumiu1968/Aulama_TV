@@ -21,6 +21,7 @@ import android.content.BroadcastReceiver
 import androidx.core.content.ContextCompat
 import top.yogiczy.mytv.core.data.entities.channel.Channel
 import top.yogiczy.mytv.core.data.entities.channel.ChannelGroupList
+import top.yogiczy.mytv.core.data.entities.channel.ChannelQuality
 import top.yogiczy.mytv.core.data.entities.channel.ChannelRoute
 import top.yogiczy.mytv.core.data.entities.channel.ChannelGroupList.Companion.channelIdx
 import top.yogiczy.mytv.core.data.entities.channel.ChannelGroupList.Companion.channelList
@@ -34,7 +35,9 @@ import top.yogiczy.mytv.tv.ui.material.Snackbar
 import top.yogiczy.mytv.tv.ui.screens.settings.SettingsViewModel
 import top.yogiczy.mytv.tv.ui.screens.videoplayer.VideoPlayerState
 import top.yogiczy.mytv.tv.ui.screens.videoplayer.rememberVideoPlayerState
+import top.yogiczy.mytv.tv.ui.utils.IptvDisplayCapabilities
 import top.yogiczy.mytv.tv.ui.utils.IptvRouteHealthStore
+import top.yogiczy.mytv.tv.ui.utils.orderRoutesForDisplay
 import java.net.URI
 import java.text.SimpleDateFormat
 import java.util.Locale
@@ -62,6 +65,10 @@ class MainContentState(
     private var routeAttemptCursor = 0
     private var routeStartedAt = 0L
     private var lastFailureHandledUrl: String? = null
+    private val supportsHdrOutput by lazy {
+        IptvDisplayCapabilities.supportsHdrOutput(context)
+    }
+    private val hdrFallbackNotifiedChannels = mutableSetOf<String>()
 
     private var _isTempChannelScreenVisible by mutableStateOf(false)
     var isTempChannelScreenVisible
@@ -153,6 +160,7 @@ class MainContentState(
             IptvRouteHealthStore.markSuccess(
                 route.url,
                 System.currentTimeMillis() - routeStartedAt,
+                playbackMode = videoPlayerState.playbackMode,
             )
             settingsViewModel.iptvPlayableHostList += getUrlHost(route.url)
             coroutineScope.launch {
@@ -185,17 +193,17 @@ class MainContentState(
             }
         }
 
-        videoPlayerState.onError {
-            val failedRoute = currentRouteOrNull() ?: return@onError
-            if (lastFailureHandledUrl == failedRoute.url) return@onError
+        videoPlayerState.onError { _ ->
+            val failedRoute = currentRouteOrNull() ?: return@onError false
+            if (lastFailureHandledUrl == failedRoute.url) return@onError false
             lastFailureHandledUrl = failedRoute.url
             IptvRouteHealthStore.markFailure(failedRoute.url)
             settingsViewModel.iptvPlayableHostList -= getUrlHost(failedRoute.url)
 
             if (_currentPlaybackEpgProgramme != null) {
                 // 回放播放錯誤時先返回同一頻道直播，再按線路健康度回退。
-                changeCurrentChannel(_currentChannel, _currentChannelUrlIdx, null)
-                return@onError
+                changeCurrentChannel(_currentChannel, _currentChannelUrlIdx, null, retrying = true)
+                return@onError true
             }
 
             playNextRoute()
@@ -206,7 +214,7 @@ class MainContentState(
                 IptvRouteHealthStore.markFailure(it.url)
                 settingsViewModel.iptvPlayableHostList -= getUrlHost(it.url)
             }
-            if (!playNextRoute()) prepareCurrentRoute()
+            if (!playNextRoute()) prepareCurrentRoute(retrying = true)
         }
     }
 
@@ -293,15 +301,40 @@ class MainContentState(
         val remembered = getUrlIdx(channel.urlList, requestedIndex)
         val ranked = IptvRouteHealthStore.rankedIndices(channel.routes)
 
-        // 明確手動揀線時先尊重該線；自動換台則依 M3U 主線至後備次序。
-        return if (requestedIndex != null) {
-            listOf(remembered) + ranked.filterNot { it == remembered }
-        } else {
-            ranked
+        // 明確手動揀線時先尊重該線；自動換台則使用本機歷史表現及畫質排序。
+        return orderRoutesForDisplay(
+            routes = channel.routes,
+            rankedIndices = ranked,
+            requestedIndex = remembered.takeIf { requestedIndex != null },
+            supportsHdrOutput = supportsHdrOutput,
+        )
+    }
+
+    private fun notifyHdrRouteDecision(channel: Channel, requestedIndex: Int?) {
+        if (supportsHdrOutput) return
+
+        val manuallyRequested4k = requestedIndex != null &&
+            channel.routes.getOrNull(getUrlIdx(channel.urlList, requestedIndex))
+                ?.quality == ChannelQuality.UHD_4K
+        if (manuallyRequested4k) {
+            Snackbar.show("呢部電視未支援 HDR，4K 顏色可能偏淡")
+            return
+        }
+
+        val selectedRoute = currentRouteOrNull() ?: return
+        if (
+            requestedIndex == null &&
+            selectedRoute.quality != ChannelQuality.UHD_4K &&
+            channel.routes.any { it.quality == ChannelQuality.UHD_4K } &&
+            hdrFallbackNotifiedChannels.add(channel.name)
+        ) {
+            Snackbar.show(
+                "呢部電視未支援 HDR，已自動選用${selectedRoute.quality.label}正常色彩線路"
+            )
         }
     }
 
-    private fun prepareCurrentRoute() {
+    private fun prepareCurrentRoute(retrying: Boolean = false) {
         val baseRoute = currentRouteOrNull() ?: return
         var route = baseRoute
 
@@ -326,7 +359,11 @@ class MainContentState(
         if (ChannelUtil.isHybridWebViewUrl(route.url)) {
             videoPlayerState.stop()
         } else {
-            videoPlayerState.prepare(route)
+            videoPlayerState.prepare(
+                route,
+                retrying = retrying,
+                preferredPlaybackMode = IptvRouteHealthStore.preferredPlaybackMode(baseRoute.url),
+            )
         }
     }
 
@@ -334,7 +371,7 @@ class MainContentState(
         if (routeAttemptCursor + 1 >= routeAttemptOrder.size) return false
         routeAttemptCursor += 1
         _currentChannelUrlIdx = routeAttemptOrder[routeAttemptCursor]
-        prepareCurrentRoute()
+        prepareCurrentRoute(retrying = true)
         return true
     }
 
@@ -342,6 +379,7 @@ class MainContentState(
         channel: Channel,
         urlIdx: Int? = null,
         playbackEpgProgramme: EpgProgramme? = null,
+        retrying: Boolean = false,
     ) {
         if (channel.routes.isEmpty()) return
         if (
@@ -358,7 +396,8 @@ class MainContentState(
         routeAttemptOrder = buildRouteAttemptOrder(channel, urlIdx)
         routeAttemptCursor = 0
         _currentChannelUrlIdx = routeAttemptOrder.firstOrNull() ?: return
-        prepareCurrentRoute()
+        notifyHdrRouteDecision(channel, urlIdx)
+        prepareCurrentRoute(retrying = retrying)
     }
 
     fun changeCurrentChannelToPrev() {
@@ -367,6 +406,19 @@ class MainContentState(
 
     fun changeCurrentChannelToNext() {
         changeCurrentChannel(getNextChannel())
+    }
+
+    fun changeCurrentChannelToNextRoute(): Boolean {
+        val routeCount = _currentChannel.routes.size
+        if (routeCount <= 1) return false
+
+        val nextRouteIdx = (_currentChannelUrlIdx + 1) % routeCount
+        changeCurrentChannel(
+            channel = _currentChannel,
+            urlIdx = nextRouteIdx,
+            playbackEpgProgramme = _currentPlaybackEpgProgramme,
+        )
+        return true
     }
 
     fun refreshCurrentChannel() {

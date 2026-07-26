@@ -3,6 +3,8 @@ package top.yogiczy.mytv.tv.ui.screens.main.components
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.Lifecycle
@@ -10,6 +12,8 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.collections.immutable.toImmutableList
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import top.yogiczy.mytv.core.data.entities.channel.ChannelGroupList
 import top.yogiczy.mytv.core.data.entities.channel.ChannelGroupList.Companion.channelIdx
@@ -34,7 +38,6 @@ import top.yogiczy.mytv.tv.ui.screens.channel.rememberChannelNumberSelectState
 import top.yogiczy.mytv.tv.ui.screens.channelurl.ChannelUrlScreen
 import top.yogiczy.mytv.tv.ui.screens.classicchannel.ClassicChannelScreen
 import top.yogiczy.mytv.tv.ui.screens.datetime.DatetimeScreen
-import top.yogiczy.mytv.tv.ui.screens.epg.EpgProgrammeProgressScreen
 import top.yogiczy.mytv.tv.ui.screens.epg.EpgScreen
 import top.yogiczy.mytv.tv.ui.screens.epgreverse.EpgReverseScreen
 import top.yogiczy.mytv.tv.ui.screens.monitor.MonitorScreen
@@ -50,6 +53,8 @@ import top.yogiczy.mytv.tv.ui.screens.webview.WebViewScreen
 import top.yogiczy.mytv.tv.ui.utils.captureBackKey
 import top.yogiczy.mytv.tv.ui.utils.handleDragGestures
 import top.yogiczy.mytv.tv.ui.utils.handleKeyEvents
+
+private const val SELECT_DOUBLE_PRESS_WINDOW_MS = 400L
 
 @Composable
 fun MainContent(
@@ -74,6 +79,7 @@ fun MainContent(
             mainContentState.changeCurrentChannel(channel)
         }
     }
+    val pendingSelectJob = remember { mutableStateOf<Job?>(null) }
 
     val lifecycleOwner = LocalLifecycleOwner.current
 
@@ -87,6 +93,7 @@ fun MainContent(
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
+            pendingSelectJob.value?.cancel()
         }
     }
 
@@ -101,15 +108,42 @@ fun MainContent(
             }
             .handleKeyEvents(
                 onUp = {
-                    if (settingsViewModel.iptvChannelChangeFlip) mainContentState.changeCurrentChannelToNext()
-                    else mainContentState.changeCurrentChannelToPrev()
+                    if (!mainContentState.isChannelUrlScreenVisible) {
+                        if (settingsViewModel.iptvChannelChangeFlip) mainContentState.changeCurrentChannelToNext()
+                        else mainContentState.changeCurrentChannelToPrev()
+                    }
                 },
                 onDown = {
-                    if (settingsViewModel.iptvChannelChangeFlip) mainContentState.changeCurrentChannelToPrev()
-                    else mainContentState.changeCurrentChannelToNext()
+                    if (!mainContentState.isChannelUrlScreenVisible) {
+                        if (settingsViewModel.iptvChannelChangeFlip) mainContentState.changeCurrentChannelToPrev()
+                        else mainContentState.changeCurrentChannelToNext()
+                    }
                 },
-                onSelect = { mainContentState.isChannelScreenVisible = true },
-                onLongSelect = { mainContentState.isQuickOpScreenVisible = true },
+                onSelect = {
+                    if (!mainContentState.isChannelUrlScreenVisible) {
+                        val pendingJob = pendingSelectJob.value
+                        if (pendingJob?.isActive == true) {
+                            pendingJob.cancel()
+                            pendingSelectJob.value = null
+                            if (!mainContentState.changeCurrentChannelToNextRoute()) {
+                                mainContentState.isChannelScreenVisible = true
+                            }
+                        } else {
+                            pendingSelectJob.value = coroutineScope.launch {
+                                delay(SELECT_DOUBLE_PRESS_WINDOW_MS)
+                                if (!mainContentState.isChannelUrlScreenVisible) {
+                                    mainContentState.isChannelScreenVisible = true
+                                }
+                                pendingSelectJob.value = null
+                            }
+                        }
+                    }
+                },
+                onLongSelect = {
+                    pendingSelectJob.value?.cancel()
+                    pendingSelectJob.value = null
+                    mainContentState.isQuickOpScreenVisible = true
+                },
                 onSettings = { mainContentState.isQuickOpScreenVisible = true },
                 onLongLeft = { mainContentState.isEpgScreenVisible = true },
                 onLongRight = { mainContentState.isChannelUrlScreenVisible = true },
@@ -144,16 +178,6 @@ fun MainContent(
                 },
             )
         }
-    }
-
-    Visible({ settingsViewModel.uiShowEpgProgrammePermanentProgress }) {
-        EpgProgrammeProgressScreen(
-            currentEpgProgrammeProvider = {
-                mainContentState.currentPlaybackEpgProgramme
-                    ?: epgListProvider().recentProgramme(mainContentState.currentChannel)?.now
-            },
-            videoPlayerCurrentPositionProvider = { videoPlayerState.currentPosition },
-        )
     }
 
     Visible({

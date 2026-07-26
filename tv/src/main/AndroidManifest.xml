@@ -38,6 +38,10 @@
         android:usesCleartextTraffic="true"
         tools:ignore="DiscouragedApi"
         tools:targetApi="n">
+        <uses-library
+            android:name="jungle"
+            android:required="false" />
+
         <activity
             android:name=".MainActivity"
             android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation|screenLayout|keyboardHidden"

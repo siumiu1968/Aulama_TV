@@ -41,20 +41,6 @@ fun SettingsCategoryUI(
 
         item {
             SettingsListItem(
-                headlineContent = "常駐底部節目進度",
-                supportingContent = "在播放器底部顯示當前節目進度條",
-                trailingContent = {
-                    Switch(settingsViewModel.uiShowEpgProgrammePermanentProgress, null)
-                },
-                onSelected = {
-                    settingsViewModel.uiShowEpgProgrammePermanentProgress =
-                        !settingsViewModel.uiShowEpgProgrammePermanentProgress
-                },
-            )
-        }
-
-        item {
-            SettingsListItem(
                 headlineContent = "台標顯示",
                 trailingContent = {
                     Switch(settingsViewModel.uiShowChannelLogo, null)

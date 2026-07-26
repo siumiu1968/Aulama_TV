@@ -18,8 +18,8 @@ android {
         applicationId = "top.yogiczy.mytv.tv.tc"
         minSdk = libs.versions.minSdk.get().toInt()
         targetSdk = libs.versions.targetSdk.get().toInt()
-        versionCode = 31
-        versionName = "2.6.6-family"
+        versionCode = 32
+        versionName = "2.6.7-family"
         vectorDrawables {
             useSupportLibrary = true
         }
@@ -117,6 +117,7 @@ dependencies {
 
     implementation(libs.androidx.profileinstaller)
 
+    testImplementation(libs.junit)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.ui.test.junit4)
     debugImplementation(libs.androidx.ui.tooling)

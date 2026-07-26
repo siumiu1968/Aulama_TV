@@ -34,6 +34,8 @@ import androidx.media3.exoplayer.rtsp.RtspMediaSource
 import androidx.media3.exoplayer.source.MediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.exoplayer.util.EventLogger
+import androidx.media3.extractor.DefaultExtractorsFactory
+import androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -155,9 +157,15 @@ class Media3VideoPlayer(
         )
 
     private val contentTypeAttempts = mutableMapOf<Int, Boolean>()
+    private val resilientExtractorsFactory = DefaultExtractorsFactory()
+        .setTsExtractorFlags(
+            DefaultTsPayloadReaderFactory.FLAG_DETECT_ACCESS_UNITS or
+                DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES
+        )
     private var updatePositionJob: Job? = null
     private var playbackHealthJob: Job? = null
     private var playbackHealthReported = false
+    private val recentAudioUnderruns = ArrayDeque<Long>()
     private var recoverableErrorRetries = 0
     private var currentRoute: ChannelRoute? = null
     private var currentSurfaceView: SurfaceView? = null
@@ -208,7 +216,8 @@ class Media3VideoPlayer(
             }
 
             C.CONTENT_TYPE_OTHER -> {
-                ProgressiveMediaSource.Factory(dataSourceFactory).createMediaSource(mediaItem)
+                ProgressiveMediaSource.Factory(dataSourceFactory, resilientExtractorsFactory)
+                    .createMediaSource(mediaItem)
             }
 
             else -> {
@@ -225,6 +234,7 @@ class Media3VideoPlayer(
     private fun prepareInternal(route: ChannelRoute, contentType: Int? = null) {
         playbackHealthJob?.cancel()
         playbackHealthReported = false
+        recentAudioUnderruns.clear()
         currentRoute = route
         val uri = Uri.parse(route.url.let { if (it.endsWith("?")) "${it}t" else it })
         val mediaSource = getMediaSource(uri, route, contentType)
@@ -422,6 +432,31 @@ class Media3VideoPlayer(
             metadata = metadata.copy(audioDecoder = decoderName)
             triggerMetadata(metadata)
         }
+
+        override fun onAudioUnderrun(
+            eventTime: AnalyticsListener.EventTime,
+            bufferSize: Int,
+            bufferSizeMs: Long,
+            elapsedSinceLastFeedMs: Long,
+        ) {
+            if (
+                playbackHealthReported ||
+                !videoPlayer.isPlaying ||
+                videoPlayer.playbackState != Player.STATE_READY
+            ) return
+            val now = System.currentTimeMillis()
+            recentAudioUnderruns.removeAll { now - it > AUDIO_UNDERRUN_WINDOW_MS }
+            recentAudioUnderruns += now
+            log.w(
+                "Audio underrun: bufferSize=$bufferSize, bufferSizeMs=$bufferSizeMs, " +
+                    "elapsedSinceLastFeedMs=$elapsedSinceLastFeedMs, " +
+                    "samples=${recentAudioUnderruns.size}",
+            )
+            if (recentAudioUnderruns.size >= AUDIO_UNDERRUN_LIMIT) {
+                playbackHealthReported = true
+                triggerPlaybackDegraded("audio-underrun")
+            }
+        }
     }
 
     private val eventLogger = EventLogger()
@@ -502,6 +537,8 @@ class Media3VideoPlayer(
 
     companion object {
         private const val MAX_RECOVERABLE_ERROR_RETRIES = 1
+        private const val AUDIO_UNDERRUN_LIMIT = 3
+        private const val AUDIO_UNDERRUN_WINDOW_MS = 15_000L
         private const val TVB_AKAMAI_HOST = "prd-vcache.edge-global.akamai.tvb.com"
 
         internal fun requiresTvbHlsSession(route: ChannelRoute): Boolean =

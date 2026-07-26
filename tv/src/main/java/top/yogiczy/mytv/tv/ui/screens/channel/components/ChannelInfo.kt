@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -31,13 +30,10 @@ import kotlinx.coroutines.delay
 import top.yogiczy.mytv.core.data.entities.channel.Channel
 import top.yogiczy.mytv.core.data.entities.channel.ChannelRoute
 import top.yogiczy.mytv.core.data.entities.epg.EpgProgramme
-import top.yogiczy.mytv.core.data.entities.epg.EpgProgramme.Companion.progress
 import top.yogiczy.mytv.core.data.entities.epg.EpgProgramme.Companion.remainingMinutes
 import top.yogiczy.mytv.core.data.entities.epg.EpgProgrammeRecent
 import top.yogiczy.mytv.core.data.utils.ChannelUtil
 import top.yogiczy.mytv.core.util.utils.isIPv6
-import top.yogiczy.mytv.tv.ui.material.ProgressBar
-import top.yogiczy.mytv.tv.ui.material.ProgressBarColors
 import top.yogiczy.mytv.tv.ui.material.Tag
 import top.yogiczy.mytv.tv.ui.material.TagDefaults
 import top.yogiczy.mytv.tv.ui.screens.videoplayer.player.VideoPlayer
@@ -75,7 +71,10 @@ fun ChannelInfo(
             )
         }
 
-        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
             ChannelInfoTitle(
                 channelProvider = channelProvider,
                 channelLineIdxProvider = channelUrlIdxProvider,
@@ -196,33 +195,6 @@ private fun ChannelInfoTags(
 }
 
 @Composable
-private fun ChannelInfoExtra(
-    modifier: Modifier = Modifier,
-    channelProvider: () -> Channel = { Channel() },
-    channelLineIdxProvider: () -> Int = { 0 },
-    isInTimeShiftProvider: () -> Boolean = { false },
-    currentPlaybackEpgProgrammeProvider: () -> EpgProgramme? = { null },
-    playerMetadataProvider: () -> VideoPlayer.Metadata = { VideoPlayer.Metadata() },
-) {
-    Row(
-        modifier = modifier,
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        verticalAlignment = Alignment.Bottom,
-    ) {
-        ChannelInfoTags(
-            modifier = Modifier.weight(1f, fill = false),
-            channelProvider = channelProvider,
-            channelLineIdxProvider = channelLineIdxProvider,
-            isInTimeShiftProvider = isInTimeShiftProvider,
-            currentPlaybackEpgProgrammeProvider = currentPlaybackEpgProgrammeProvider,
-            playerMetadataProvider = playerMetadataProvider,
-        )
-
-        ChannelInfoNetSpeed()
-    }
-}
-
-@Composable
 private fun ChannelInfoTitle(
     modifier: Modifier = Modifier,
     channelProvider: () -> Channel = { Channel() },
@@ -234,54 +206,34 @@ private fun ChannelInfoTitle(
 ) {
     val channel = channelProvider()
 
-    if (dense) {
-        Column(
-            modifier = modifier,
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Text(
-                channel.name,
-                style = MaterialTheme.typography.headlineMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-
-            ChannelInfoExtra(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 2.dp),
-                channelProvider = channelProvider,
-                channelLineIdxProvider = channelLineIdxProvider,
-                isInTimeShiftProvider = isInTimeShiftProvider,
-                currentPlaybackEpgProgrammeProvider = currentPlaybackEpgProgrammeProvider,
-                playerMetadataProvider = playerMetadataProvider,
-            )
-        }
-    } else {
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(if (dense) 4.dp else 6.dp),
+    ) {
         Row(
-            modifier = modifier,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalAlignment = Alignment.Top,
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
                 channel.name,
                 style = MaterialTheme.typography.headlineMedium,
-                modifier = Modifier.sizeIn(maxWidth = 340.dp),
+                modifier = Modifier.weight(1f),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
 
-            ChannelInfoExtra(
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(top = 5.dp),
-                channelProvider = channelProvider,
-                channelLineIdxProvider = channelLineIdxProvider,
-                isInTimeShiftProvider = isInTimeShiftProvider,
-                currentPlaybackEpgProgrammeProvider = currentPlaybackEpgProgrammeProvider,
-                playerMetadataProvider = playerMetadataProvider,
-            )
+            ChannelInfoNetSpeed()
         }
+
+        ChannelInfoTags(
+            modifier = Modifier.fillMaxWidth(),
+            channelProvider = channelProvider,
+            channelLineIdxProvider = channelLineIdxProvider,
+            isInTimeShiftProvider = isInTimeShiftProvider,
+            currentPlaybackEpgProgrammeProvider = currentPlaybackEpgProgrammeProvider,
+            playerMetadataProvider = playerMetadataProvider,
+        )
     }
 }
 
@@ -333,25 +285,11 @@ private fun ChannelInfoEpgProgramme(
         )
 
         if (showProgress) {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                ProgressBar(
-                    process = programme.progress(),
-                    modifier = Modifier.size(60.dp, 5.dp),
-                    colors = ProgressBarColors(
-                        barColor = MaterialTheme.colorScheme.onSurface.copy(0.2f),
-                        progressColor = MaterialTheme.colorScheme.onSurface,
-                    ),
-                )
-
-                Text(
-                    "${programme.remainingMinutes()}分鐘",
-                    style = MaterialTheme.typography.labelLarge,
-                    modifier = Modifier.alpha(0.8f),
-                )
-            }
+            Text(
+                "${programme.remainingMinutes()}分鐘",
+                style = MaterialTheme.typography.labelLarge,
+                modifier = Modifier.alpha(0.8f),
+            )
         }
 
         Text(

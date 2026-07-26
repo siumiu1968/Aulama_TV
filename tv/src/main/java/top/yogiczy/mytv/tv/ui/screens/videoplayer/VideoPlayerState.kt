@@ -1,5 +1,6 @@
 package top.yogiczy.mytv.tv.ui.screens.videoplayer
 
+import android.os.Build
 import android.view.SurfaceView
 import android.view.TextureView
 import androidx.compose.runtime.Composable
@@ -26,9 +27,11 @@ import top.yogiczy.mytv.core.data.entities.channel.ChannelQuality
 import top.yogiczy.mytv.core.data.entities.channel.ChannelRoute
 import top.yogiczy.mytv.tv.ui.screens.settings.SettingsViewModel
 import top.yogiczy.mytv.tv.ui.screens.videoplayer.player.IJKVideoPlayer
+import top.yogiczy.mytv.tv.ui.screens.videoplayer.player.LeTvVideoPlayer
 import top.yogiczy.mytv.tv.ui.screens.videoplayer.player.Media3VideoPlayer
 import top.yogiczy.mytv.tv.ui.screens.videoplayer.player.VideoPlayer
 import top.yogiczy.mytv.tv.ui.utils.Configs
+import top.yogiczy.mytv.tv.ui.utils.IptvPlaybackMode
 
 
 @Stable
@@ -46,9 +49,12 @@ class VideoPlayerState(
         is Media3VideoPlayer -> Configs.VideoPlayerType.MEDIA3
         else -> Configs.VideoPlayerType.IJK
     }
+    private var activeIJKSoftwareDecode = false
+    private var activeLeTvVendorPlayer = instance is LeTvVideoPlayer
     private var initialized = false
     private var playbackGeneration = 0
     private var fourKFallbackRouteUrl: String? = null
+    private val attemptedPlaybackModes = mutableSetOf<IptvPlaybackMode>()
     private var bufferingHealthJob: Job? = null
     private var degradedReported = false
     private var isAppForeground = false
@@ -61,6 +67,11 @@ class VideoPlayerState(
 
     /** 錯誤 */
     var error by mutableStateOf<String?>(null)
+        private set
+
+    /** 播放器仍在自動切換引擎或後備線路，未到最終失敗。 */
+    var retryMessage by mutableStateOf<String?>(null)
+        private set
 
     /** 正在緩衝 */
     var isBuffering by mutableStateOf(false)
@@ -89,9 +100,31 @@ class VideoPlayerState(
     /** 元數據 */
     var metadata by mutableStateOf(VideoPlayer.Metadata())
 
-    fun prepare(route: ChannelRoute) {
+    val playbackMode: IptvPlaybackMode
+        get() = when (activePlayerType) {
+            Configs.VideoPlayerType.MEDIA3 -> IptvPlaybackMode.MEDIA3
+            Configs.VideoPlayerType.IJK -> if (
+                activeIJKSoftwareDecode || (
+                    Configs.videoPlayerForceSoftDecode &&
+                        currentRoute?.quality != ChannelQuality.UHD_4K
+                    )
+            ) {
+                IptvPlaybackMode.IJK_SOFTWARE
+            } else {
+                IptvPlaybackMode.IJK
+            }
+        }
+
+    fun prepare(
+        route: ChannelRoute,
+        retrying: Boolean = false,
+        preferredPlaybackMode: IptvPlaybackMode? = null,
+    ) {
         if (!initialized) initialize()
-        if (currentRoute?.url != route.url) fourKFallbackRouteUrl = null
+        if (currentRoute?.url != route.url) {
+            fourKFallbackRouteUrl = null
+        }
+        attemptedPlaybackModes.clear()
         playbackGeneration += 1
         bufferingHealthJob?.cancel()
         recentRebuffers.clear()
@@ -100,9 +133,12 @@ class VideoPlayerState(
         requiresSurfaceView = route.quality == ChannelQuality.UHD_4K
         if (requiresSurfaceView) currentTexture = null
         error = null
+        retryMessage = if (retrying) "自動重試中" else null
         hasRenderedFirstFrame = false
         isBuffering = true
-        switchPlayerIfNeeded(preferredPlayerType(route))
+        val mode = selectPlaybackMode(route, preferredPlaybackMode)
+        attemptedPlaybackModes += mode
+        switchPlayerIfNeeded(mode)
         instance.prepare(route)
     }
 
@@ -130,6 +166,8 @@ class VideoPlayerState(
         recentRebuffers.clear()
         hasRenderedFirstFrame = false
         isBuffering = false
+        error = null
+        retryMessage = null
         instance.stop()
     }
 
@@ -148,7 +186,7 @@ class VideoPlayerState(
 
     private val onReadyListeners = mutableListOf<() -> Unit>()
     private val onFirstFrameListeners = mutableListOf<() -> Unit>()
-    private val onErrorListeners = mutableListOf<() -> Unit>()
+    private val onErrorListeners = mutableListOf<(String) -> Boolean>()
     private val onInterruptListeners = mutableListOf<() -> Unit>()
     private val onPlaybackDegradedListeners = mutableListOf<(String) -> Unit>()
 
@@ -160,7 +198,7 @@ class VideoPlayerState(
         onFirstFrameListeners.add(listener)
     }
 
-    fun onError(listener: () -> Unit) {
+    fun onError(listener: (String) -> Boolean) {
         onErrorListeners.add(listener)
     }
 
@@ -174,39 +212,126 @@ class VideoPlayerState(
 
     private fun reportPlaybackDegraded(reason: String) {
         if (degradedReported || !hasRenderedFirstFrame) return
+        if (tryPlaybackModeFallback()) return
         degradedReported = true
         bufferingHealthJob?.cancel()
         onPlaybackDegradedListeners.forEach { it(reason) }
     }
 
+    private fun tryPlaybackModeFallback(): Boolean {
+        val route = currentRoute ?: return false
+        if (route.quality == ChannelQuality.UHD_4K) return false
 
-    private fun preferredPlayerType(
-        route: ChannelRoute,
-        configuredType: Configs.VideoPlayerType = Configs.videoPlayerType,
-    ): Configs.VideoPlayerType =
-        if (
-            route.quality == ChannelQuality.UHD_4K ||
-            Media3VideoPlayer.requiresTvbHlsSession(route)
-        ) {
-            Configs.VideoPlayerType.MEDIA3
-        } else {
-            configuredType
+        val candidates = when (playbackMode) {
+            IptvPlaybackMode.IJK -> listOf(
+                IptvPlaybackMode.IJK_SOFTWARE,
+                IptvPlaybackMode.MEDIA3,
+            )
+            IptvPlaybackMode.IJK_SOFTWARE -> listOf(
+                IptvPlaybackMode.IJK,
+                IptvPlaybackMode.MEDIA3,
+            )
+            IptvPlaybackMode.MEDIA3 -> listOf(
+                IptvPlaybackMode.IJK,
+                IptvPlaybackMode.IJK_SOFTWARE,
+            )
         }
+        val nextMode = candidates.firstOrNull { it !in attemptedPlaybackModes } ?: return false
+        val previousMode = playbackMode
+        attemptedPlaybackModes += nextMode
 
-    private fun createPlayer(type: Configs.VideoPlayerType): VideoPlayer = when (type) {
-        Configs.VideoPlayerType.IJK -> IJKVideoPlayer(context, coroutineScope)
-        Configs.VideoPlayerType.MEDIA3 -> Media3VideoPlayer(context, coroutineScope)
+        playbackGeneration += 1
+        bufferingHealthJob?.cancel()
+        recentRebuffers.clear()
+        degradedReported = false
+        hasRenderedFirstFrame = false
+        isBuffering = true
+        error = null
+        retryMessage = if (nextMode == IptvPlaybackMode.IJK_SOFTWARE) {
+            "正在啟用兼容解碼"
+        } else {
+            "正在調整播放方式"
+        }
+        coroutineScope.launch {
+            if (
+                currentRoute?.url == route.url &&
+                playbackMode == previousMode
+            ) {
+                switchPlayerIfNeeded(nextMode)
+                instance.prepare(route)
+            }
+        }
+        return true
     }
 
-    private fun switchPlayerIfNeeded(type: Configs.VideoPlayerType) {
-        if (activePlayerType == type) return
+
+    private fun selectPlaybackMode(
+        route: ChannelRoute,
+        preferredMode: IptvPlaybackMode? = null,
+        configuredType: Configs.VideoPlayerType = Configs.videoPlayerType,
+    ): IptvPlaybackMode =
+        if (route.quality == ChannelQuality.UHD_4K) {
+            if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.M) {
+                IptvPlaybackMode.IJK
+            } else {
+                IptvPlaybackMode.MEDIA3
+            }
+        } else if (Media3VideoPlayer.requiresTvbHlsSession(route)) {
+            IptvPlaybackMode.MEDIA3
+        } else {
+            preferredMode ?: when (configuredType) {
+                Configs.VideoPlayerType.IJK -> IptvPlaybackMode.IJK
+                Configs.VideoPlayerType.MEDIA3 -> IptvPlaybackMode.MEDIA3
+            }
+        }
+
+    private fun shouldUseLeTvVendorPlayer(mode: IptvPlaybackMode): Boolean =
+        mode == IptvPlaybackMode.IJK &&
+            currentRoute?.quality == ChannelQuality.UHD_4K &&
+            currentRoute?.url != fourKFallbackRouteUrl &&
+            LeTvVideoPlayer.isAvailable(context)
+
+    private fun createPlayer(mode: IptvPlaybackMode): VideoPlayer = when (mode) {
+        IptvPlaybackMode.IJK -> if (shouldUseLeTvVendorPlayer(mode)) {
+            LeTvVideoPlayer(context, coroutineScope)
+        } else {
+            IJKVideoPlayer(context, coroutineScope)
+        }
+        IptvPlaybackMode.IJK_SOFTWARE -> IJKVideoPlayer(
+            context,
+            coroutineScope,
+            forceSoftwareDecode = true,
+        )
+        IptvPlaybackMode.MEDIA3 -> Media3VideoPlayer(context, coroutineScope)
+    }
+
+    private fun switchPlayerIfNeeded(mode: IptvPlaybackMode) {
+        val type = when (mode) {
+            IptvPlaybackMode.IJK,
+            IptvPlaybackMode.IJK_SOFTWARE -> Configs.VideoPlayerType.IJK
+            IptvPlaybackMode.MEDIA3 -> Configs.VideoPlayerType.MEDIA3
+        }
+        val softwareDecode = mode == IptvPlaybackMode.IJK_SOFTWARE
+        val useLeTvVendorPlayer = shouldUseLeTvVendorPlayer(mode)
+        if (
+            activePlayerType == type &&
+            (
+                type != Configs.VideoPlayerType.IJK ||
+                    (
+                        activeIJKSoftwareDecode == softwareDecode &&
+                            activeLeTvVendorPlayer == useLeTvVendorPlayer
+                        )
+                )
+        ) return
 
         instance.release()
         currentSurface = null
         currentTexture = null
         videoOutputGeneration += 1
-        instance = createPlayer(type)
+        instance = createPlayer(mode)
         activePlayerType = type
+        activeIJKSoftwareDecode = softwareDecode
+        activeLeTvVendorPlayer = useLeTvVendorPlayer
         instance.setPlaybackAllowed(isAppForeground)
         if (initialized) configureInstance()
     }
@@ -221,6 +346,29 @@ class VideoPlayerState(
             if (
                 ex != null &&
                 route?.quality == ChannelQuality.UHD_4K &&
+                activeLeTvVendorPlayer &&
+                fourKFallbackRouteUrl != route.url
+            ) {
+                fourKFallbackRouteUrl = route.url
+                hasRenderedFirstFrame = false
+                isBuffering = true
+                error = null
+                retryMessage = "正在切換兼容 4K 播放"
+                coroutineScope.launch {
+                    if (
+                        currentRoute?.url == route.url &&
+                        activeLeTvVendorPlayer
+                    ) {
+                        switchPlayerIfNeeded(IptvPlaybackMode.IJK)
+                        instance.prepare(route)
+                    }
+                }
+                return@playerError
+            }
+
+            if (
+                ex != null &&
+                route?.quality == ChannelQuality.UHD_4K &&
                 activePlayerType == Configs.VideoPlayerType.MEDIA3 &&
                 fourKFallbackRouteUrl != route.url &&
                 ex.errorCodeName.contains("DECODER", ignoreCase = true)
@@ -228,21 +376,34 @@ class VideoPlayerState(
                 fourKFallbackRouteUrl = route.url
                 hasRenderedFirstFrame = false
                 isBuffering = true
+                error = null
+                retryMessage = "正在調整 4K 播放"
                 coroutineScope.launch {
                     if (
                         currentRoute?.url == route.url &&
                         activePlayerType == Configs.VideoPlayerType.MEDIA3
                     ) {
-                        switchPlayerIfNeeded(Configs.VideoPlayerType.IJK)
+                        attemptedPlaybackModes += IptvPlaybackMode.IJK
+                        switchPlayerIfNeeded(IptvPlaybackMode.IJK)
                         instance.prepare(route)
                     }
                 }
                 return@playerError
             }
 
+            if (ex != null && tryPlaybackModeFallback()) {
+                return@playerError
+            }
+
             hasRenderedFirstFrame = false
-            error = ex?.let { "${it.errorCodeName}(${it.errorCode})" }
-                ?.apply { onErrorListeners.forEach { it.invoke() } }
+            val message = ex?.let { "${it.errorCodeName}(${it.errorCode})" }
+            error = null
+            retryMessage = message?.let { "自動重試中" }
+            val willRetry = message != null && onErrorListeners.any { it(message) }
+            if (!willRetry) {
+                retryMessage = null
+                error = message
+            }
 
         }
         instance.onReady {
@@ -275,6 +436,8 @@ class VideoPlayerState(
         instance.onFirstFrame {
             hasRenderedFirstFrame = true
             isBuffering = false
+            error = null
+            retryMessage = null
             onFirstFrameListeners.forEach { it.invoke() }
         }
         instance.onIsPlayingChanged { playing ->
@@ -292,14 +455,10 @@ class VideoPlayerState(
         if (initialized) return
         initialized = true
         settingsViewModel.videoPlayerTypeValue = Configs.videoPlayerType
-        settingsViewModel.onVideoPlayerTypeChanged = { type ->
+        settingsViewModel.onVideoPlayerTypeChanged = { _ ->
             currentRoute?.let { route ->
-                val targetType = preferredPlayerType(route, type)
-                if (targetType == activePlayerType) return@let
-
                 val wasPlaying = isPlaying
                 val position = currentPosition
-                switchPlayerIfNeeded(targetType)
                 prepare(route)
                 seekTo(position)
                 if (wasPlaying) play()

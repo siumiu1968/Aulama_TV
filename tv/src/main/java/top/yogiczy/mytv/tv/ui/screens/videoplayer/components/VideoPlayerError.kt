@@ -3,6 +3,7 @@ package top.yogiczy.mytv.tv.ui.screens.videoplayer.components
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -11,14 +12,18 @@ import androidx.compose.ui.unit.dp
 import androidx.tv.material3.LocalContentColor
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
+import top.yogiczy.mytv.tv.ui.material.CircularProgressIndicator
 import top.yogiczy.mytv.tv.ui.theme.MyTVTheme
 
 @Composable
 fun VideoPlayerError(
     modifier: Modifier = Modifier,
     errorProvider: () -> String? = { null },
+    retryMessageProvider: () -> String? = { null },
 ) {
-    val error = errorProvider() ?: return
+    val retryMessage = retryMessageProvider()
+    val error = errorProvider()
+    if (retryMessage == null && error == null) return
 
     Column(
         modifier = modifier
@@ -29,24 +34,37 @@ fun VideoPlayerError(
             .padding(horizontal = 20.dp, vertical = 10.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text(
-            text = "播放失敗",
-            style = MaterialTheme.typography.titleLarge,
-            color = MaterialTheme.colorScheme.error,
-        )
-
-        Text(
-            text = error,
-            style = MaterialTheme.typography.bodyMedium,
-            color = LocalContentColor.current.copy(alpha = 0.8f),
-        )
-
-        getErrorCodeDesc(error)?.let { nnDesc ->
+        if (retryMessage != null) {
+            CircularProgressIndicator(
+                modifier = Modifier
+                    .padding(bottom = 8.dp)
+                    .size(30.dp),
+                strokeWidth = 3.dp,
+            )
             Text(
-                text = nnDesc,
+                text = retryMessage,
+                style = MaterialTheme.typography.titleLarge,
+            )
+        } else if (error != null) {
+            Text(
+                text = "播放失敗",
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.error,
+            )
+
+            Text(
+                text = error,
                 style = MaterialTheme.typography.bodyMedium,
                 color = LocalContentColor.current.copy(alpha = 0.8f),
             )
+
+            getErrorCodeDesc(error)?.let { nnDesc ->
+                Text(
+                    text = nnDesc,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = LocalContentColor.current.copy(alpha = 0.8f),
+                )
+            }
         }
     }
 }
