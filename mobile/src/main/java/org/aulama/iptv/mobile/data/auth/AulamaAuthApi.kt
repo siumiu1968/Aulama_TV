@@ -14,6 +14,7 @@ import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 import okhttp3.Call
 import okhttp3.Callback
+import okhttp3.Dns
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -22,6 +23,8 @@ import okhttp3.Response
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.aulama.iptv.mobile.data.playback.RelayPlanCandidate
 import java.io.IOException
+import java.net.Inet4Address
+import java.net.InetAddress
 import java.security.KeyStore
 import java.util.concurrent.TimeUnit
 import javax.net.ssl.SSLContext
@@ -386,10 +389,14 @@ internal object StrictAulamaHttpClient {
         }
         return OkHttpClient.Builder()
             .sslSocketFactory(sslContext.socketFactory, trustManager)
+            .dns(object : Dns {
+                override fun lookup(hostname: String): List<InetAddress> =
+                    AulamaDnsPolicy.forHost(hostname, Dns.SYSTEM.lookup(hostname))
+            })
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(20, TimeUnit.SECONDS)
             .writeTimeout(20, TimeUnit.SECONDS)
-            .retryOnConnectionFailure(false)
+            .retryOnConnectionFailure(true)
             .followRedirects(false)
             .followSslRedirects(false)
             .addInterceptor { chain ->
@@ -408,6 +415,24 @@ internal object StrictAulamaHttpClient {
         return factory.trustManagers.filterIsInstance<X509TrustManager>().singleOrNull()
             ?: error("No system X509TrustManager")
     }
+}
+
+internal object AulamaDnsPolicy {
+    private val accountOrigin = InetAddress.getByAddress(
+        byteArrayOf(138.toByte(), 2, 40, 170.toByte()),
+    )
+
+    fun forHost(hostname: String, addresses: List<InetAddress>): List<InetAddress> {
+        val ordered = ipv4First(addresses)
+        return if (hostname.equals("aulama.org", ignoreCase = true)) {
+            (listOf(accountOrigin) + ordered).distinct()
+        } else {
+            ordered
+        }
+    }
+
+    fun ipv4First(addresses: List<InetAddress>): List<InetAddress> =
+        addresses.sortedBy { address -> if (address is Inet4Address) 0 else 1 }
 }
 
 private fun JsonObject.string(name: String): String? = this[name]

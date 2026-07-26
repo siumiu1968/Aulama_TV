@@ -1,5 +1,15 @@
 # 更新日誌
 
+## [2.6.10-family] - 2026-07-27
+### 修復
+- 修正部分 Android TV 無法直連 Cloudflare 或先取得不可達 IPv6 時，Aulama ID 配對會錯誤顯示連接唔到服務
+- 帳戶 API 會先嘗試經 TLS 驗證嘅 Aulama 原站，再保留 Cloudflare IPv4／IPv6 作自動後備
+
+## [Android 1.1.2] - 2026-07-27
+### 修復
+- 手機 Aulama ID 登入、同步及中轉授權套用相同雙棧連線後備策略
+- 原生 Google／Passkey 選擇器超過 45 秒未回應時會結束載入並提示重試
+
 ## [2.6.9-family] - 2026-07-27
 ### 新增
 - Android TV 加入 Aulama ID QR Code／配對碼登入、設定頁帳戶管理，以及收藏、自訂 M3U、線路優先次序同步

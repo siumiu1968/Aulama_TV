@@ -170,8 +170,8 @@ fun AccountScreen(
                 }
 
                 Text(
-                    text = "Google 會先向 Aulama ID 取得一次性 nonce；Passkey challenge 亦由伺服器發出。" +
-                        "缺少後端接口或 Digital Asset Links 時，App 會顯示配置未完成。",
+                    text = "Google 會使用裝置上嘅帳戶安全登入；Passkey 由系統驗證，" +
+                        "密碼唔會交俾 Aulama TV。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

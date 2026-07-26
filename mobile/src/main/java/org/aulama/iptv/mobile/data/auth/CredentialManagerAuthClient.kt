@@ -12,6 +12,8 @@ import androidx.credentials.exceptions.GetCredentialException
 import androidx.credentials.exceptions.NoCredentialException
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.withTimeoutOrNull
 
 sealed interface CredentialAttempt {
     data class GoogleIdentity(
@@ -108,21 +110,29 @@ class CredentialManagerAuthClient(
         request: GetCredentialRequest,
         onCredential: (androidx.credentials.Credential) -> CredentialAttempt,
     ): CredentialAttempt {
-        return try {
-            onCredential(
-                credentialManager.getCredential(
-                    context = activity,
-                    request = request,
-                ).credential
-            )
-        } catch (_: GetCredentialCancellationException) {
-            CredentialAttempt.Cancelled
-        } catch (_: NoCredentialException) {
-            CredentialAttempt.Unavailable("裝置上暫時冇可用嘅登入憑證")
-        } catch (error: GetCredentialException) {
-            CredentialAttempt.Failed(error.message ?: "原生登入暫時未能使用")
-        } catch (error: Exception) {
-            CredentialAttempt.Failed(error.message ?: "原生登入暫時未能使用")
-        }
+        return withTimeoutOrNull(CREDENTIAL_REQUEST_TIMEOUT_MS) {
+            try {
+                onCredential(
+                    credentialManager.getCredential(
+                        context = activity,
+                        request = request,
+                    ).credential
+                )
+            } catch (_: GetCredentialCancellationException) {
+                CredentialAttempt.Cancelled
+            } catch (_: NoCredentialException) {
+                CredentialAttempt.Unavailable("裝置上暫時冇可用嘅登入憑證")
+            } catch (error: GetCredentialException) {
+                CredentialAttempt.Failed(error.message ?: "原生登入暫時未能使用")
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                CredentialAttempt.Failed(error.message ?: "原生登入暫時未能使用")
+            }
+        } ?: CredentialAttempt.Failed("系統登入等候逾時，請重試")
+    }
+
+    private companion object {
+        const val CREDENTIAL_REQUEST_TIMEOUT_MS = 45_000L
     }
 }

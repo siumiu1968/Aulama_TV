@@ -4,8 +4,28 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 import org.aulama.iptv.mobile.data.playback.RelayPlanCandidate
+import java.net.InetAddress
 
 class AulamaAuthResponseParserTest {
+    @Test
+    fun accountDnsPrefersIpv4AndRetainsIpv6Fallback() {
+        val ipv6 = InetAddress.getByName("2001:db8::1")
+        val ipv4 = InetAddress.getByName("192.0.2.1")
+
+        assertEquals(listOf(ipv4, ipv6), AulamaDnsPolicy.ipv4First(listOf(ipv6, ipv4)))
+    }
+
+    @Test
+    fun accountDnsTriesDirectOriginBeforeSystemFallbacks() {
+        val ipv6 = InetAddress.getByName("2001:db8::1")
+        val ipv4 = InetAddress.getByName("192.0.2.1")
+
+        val result = AulamaDnsPolicy.forHost("aulama.org", listOf(ipv6, ipv4))
+
+        assertEquals("138.2.40.170", result.first().hostAddress)
+        assertEquals(listOf(ipv4, ipv6), result.drop(1))
+    }
+
     @Test
     fun parsesBackendCamelCasePublicKeyContract() {
         val parsed = AulamaAuthResponseParser.parsePasskeyRequest(
