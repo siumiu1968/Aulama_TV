@@ -11,8 +11,10 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.IntRange
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.calculateStartPadding
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -32,11 +34,13 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.consumeAsFlow
 import kotlinx.coroutines.flow.debounce
 import top.yogiczy.mytv.core.data.entities.iptvsource.IptvSource.Companion.needExternalStoragePermission
 import top.yogiczy.mytv.tv.ui.material.Padding
+import top.yogiczy.mytv.tv.ui.material.AulamaBrandSplash
 import top.yogiczy.mytv.tv.ui.material.PopupHandleableApplication
 import top.yogiczy.mytv.tv.ui.material.Snackbar
 import top.yogiczy.mytv.tv.ui.material.SnackbarType
@@ -64,6 +68,12 @@ fun App(
     val configuration = LocalConfiguration.current
     val doubleBackPressedExitState = rememberDoubleBackPressedExitState()
     var showDevicePairing by rememberSaveable { mutableStateOf(false) }
+    var showLaunchBrand by remember { mutableStateOf(true) }
+
+    LaunchedEffect(Unit) {
+        delay(2000)
+        showLaunchBrand = false
+    }
 
     CompositionLocalProvider(
         LocalDensity provides Density(
@@ -77,44 +87,50 @@ fun App(
             uiFocusOptimize = settingsViewModel.uiFocusOptimize,
         ),
     ) {
-        PopupHandleableApplication {
-            if (settingsViewModel.appAgreementAgreed) {
-                if (showDevicePairing) {
-                    DevicePairingScreen(
-                        modifier = modifier,
-                        onClose = { showDevicePairing = false },
-                    )
+        Box(modifier = modifier.fillMaxSize()) {
+            PopupHandleableApplication {
+                if (settingsViewModel.appAgreementAgreed) {
+                    if (showDevicePairing) {
+                        DevicePairingScreen(
+                            modifier = Modifier.fillMaxSize(),
+                            onClose = { showDevicePairing = false },
+                        )
+                    } else {
+                        MainScreen(
+                            modifier = Modifier.fillMaxSize(),
+                            onBackPressed = {
+                                if (doubleBackPressedExitState.allowExit) {
+                                    onBackPressed()
+                                } else {
+                                    doubleBackPressedExitState.backPress()
+                                    Snackbar.show("再按一次退出")
+                                }
+                            },
+                        )
+                    }
                 } else {
-                    MainScreen(
-                        modifier = modifier,
-                        onBackPressed = {
-                            if (doubleBackPressedExitState.allowExit) {
-                                onBackPressed()
-                            } else {
-                                doubleBackPressedExitState.backPress()
-                                Snackbar.show("再按一次退出")
-                            }
+                    AgreementScreen(
+                        onAgreeAndLogin = {
+                            settingsViewModel.appAgreementAgreed = true
+                            showDevicePairing = true
                         },
+                        onAgreeAsGuest = {
+                            AulamaAccount.manager.continueAsGuest()
+                            settingsViewModel.appAgreementAgreed = true
+                        },
+                        onDisagree = { onBackPressed() },
+                        onDisableUiFocusOptimize = { settingsViewModel.uiFocusOptimize = false },
                     )
                 }
-            } else {
-                AgreementScreen(
-                    onAgreeAndLogin = {
-                        settingsViewModel.appAgreementAgreed = true
-                        showDevicePairing = true
-                    },
-                    onAgreeAsGuest = {
-                        AulamaAccount.manager.continueAsGuest()
-                        settingsViewModel.appAgreementAgreed = true
-                    },
-                    onDisagree = { onBackPressed() },
-                    onDisableUiFocusOptimize = { settingsViewModel.uiFocusOptimize = false },
-                )
+            }
+
+            SnackbarUI()
+            Visible({ settingsViewModel.debugShowLayoutGrids }) { PreviewWithLayoutGrids { } }
+
+            if (showLaunchBrand) {
+                AulamaBrandSplash()
             }
         }
-
-        SnackbarUI()
-        Visible({ settingsViewModel.debugShowLayoutGrids }) { PreviewWithLayoutGrids { } }
     }
 }
 

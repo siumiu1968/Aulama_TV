@@ -67,22 +67,37 @@ object Constants {
     /**
      * 節目單來源
      */
+    val EPG_SOURCE_TRADITIONAL = EpgSource(
+        name = "Aulama 香港繁體節目單",
+        url = "https://raw.githubusercontent.com/zzq1234567890/epg/refs/heads/main/twepg.xml.gz",
+    )
+
+    val EPG_SOURCE_SIMPLIFIED = EpgSource(
+        name = "Aulama 中國簡體節目單",
+        url = "https://raw.githubusercontent.com/zzq1234567890/epg/refs/heads/main/swepg.xml.gz",
+    )
+
+    val LEGACY_DEFAULT_EPG_URLS = setOf(
+        "https://iptv-cdn.mybacc.com/epg/e.xml.gz",
+        "http://epg.51zmt.top:8000/e.xml.gz",
+        "https://e.erw.cc/all.xml.gz",
+        GITHUB_PROXY + "https://raw.githubusercontent.com/minyoad/my-iptv/refs/heads/master/epg/e.xml.gz",
+    )
+
     val EPG_SOURCE_LIST = EpgSourceList(
         listOf(
+            EPG_SOURCE_TRADITIONAL,
+            EPG_SOURCE_SIMPLIFIED,
             EpgSource(
-                name = "默認節目單 my吧",
-                url = "https://iptv-cdn.mybacc.com/epg/e.xml.gz",
-            ),
-            EpgSource(
-                name = "默認節目單 老張的EPG",
+                name = "後備節目單 老張的EPG",
                 url = "http://epg.51zmt.top:8000/e.xml.gz",
             ),
             EpgSource(
-                name = "默認節目單 回看七天",
+                name = "後備節目單 回看七天",
                 url = "https://e.erw.cc/all.xml.gz",
             ),
             EpgSource(
-                name = "默認節目單 mybacc 備用",
+                name = "後備節目單 mybacc",
 //                url = "https://iptv-cdn.mybacc.com/epg/e.xml.gz",
                 url = GITHUB_PROXY+"https://raw.githubusercontent.com/minyoad/my-iptv/refs/heads/master/epg/e.xml.gz",
             ),

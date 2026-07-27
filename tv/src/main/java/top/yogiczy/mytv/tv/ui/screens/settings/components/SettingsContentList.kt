@@ -27,8 +27,8 @@ fun SettingsContentList(
             LocalSettings.current.uiFocusOptimize,
             Modifier.saveFocusRestorer { firstItemFocusRequester },
         ),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-        contentPadding = PaddingValues(top = 4.dp, bottom = childPadding.bottom),
+        verticalArrangement = Arrangement.spacedBy(0.dp),
+        contentPadding = PaddingValues(top = 2.dp, bottom = childPadding.bottom),
     ) {
         content(firstItemFocusRequester)
     }

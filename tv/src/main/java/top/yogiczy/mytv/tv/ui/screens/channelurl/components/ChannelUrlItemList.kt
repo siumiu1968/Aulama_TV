@@ -47,8 +47,8 @@ fun ChannelUrlItemList(
     LazyColumn(
         modifier = modifier,
         state = listState,
-        contentPadding = PaddingValues(vertical = 2.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+        contentPadding = PaddingValues(vertical = 3.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         itemsIndexed(urlList) { index, url ->
             ChannelUrlItem(

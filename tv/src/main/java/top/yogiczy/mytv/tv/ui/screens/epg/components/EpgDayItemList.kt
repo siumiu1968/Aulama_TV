@@ -36,8 +36,11 @@ fun EpgDayItemList(
     val dayList = dayListProvider()
     val currentDay = currentDayProvider()
 
-    val itemFocusRequesterList = List(dayList.size) { FocusRequester() }
+    val itemFocusRequesterList = androidx.compose.runtime.remember(dayList) {
+        List(dayList.size) { FocusRequester() }
+    }
     val listState = rememberLazyListState(max(0, dayList.indexOf(currentDay) - 2))
+    val currentDayIndex = dayList.indexOf(currentDay).coerceAtLeast(0)
 
     LaunchedEffect(listState) {
         snapshotFlow { listState.isScrollInProgress }
@@ -48,7 +51,9 @@ fun EpgDayItemList(
     LazyColumn(
         modifier = modifier.ifElse(
             LocalSettings.current.uiFocusOptimize,
-            Modifier.saveFocusRestorer { itemFocusRequesterList[dayList.indexOf(currentDay)] },
+            Modifier.saveFocusRestorer {
+                itemFocusRequesterList.getOrElse(currentDayIndex) { FocusRequester.Default }
+            },
         ),
         state = listState,
         contentPadding = PaddingValues(vertical = 8.dp),

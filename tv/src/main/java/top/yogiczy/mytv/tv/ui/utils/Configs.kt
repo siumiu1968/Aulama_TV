@@ -300,8 +300,17 @@ object Configs {
 
     /** 當前節目單來源 */
     var epgSourceCurrent: EpgSource
-        get() = Json.decodeFromString(SP.getString(KEY.EPG_SOURCE_CURRENT.name, "")
-            .ifBlank { Json.encodeToString(Constants.EPG_SOURCE_LIST.first()) })
+        get() {
+            val saved: EpgSource = Json.decodeFromString(
+                SP.getString(KEY.EPG_SOURCE_CURRENT.name, "")
+                    .ifBlank { Json.encodeToString(Constants.EPG_SOURCE_LIST.first()) }
+            )
+            if (saved.url !in Constants.LEGACY_DEFAULT_EPG_URLS) return saved
+
+            val migrated = Constants.EPG_SOURCE_TRADITIONAL
+            SP.putString(KEY.EPG_SOURCE_CURRENT.name, Json.encodeToString(migrated))
+            return migrated
+        }
         set(value) = SP.putString(KEY.EPG_SOURCE_CURRENT.name, Json.encodeToString(value))
 
     /** 節目單來源列表 */

@@ -1,9 +1,13 @@
 package top.yogiczy.mytv.tv.ui.screens.channelurl
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
@@ -12,10 +16,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.MaterialTheme
@@ -64,28 +70,59 @@ fun ChannelUrlScreen(
             modifier = Modifier
                 .width(420.dp)
                 .fillMaxHeight()
-                .background(
-                    color = MaterialTheme.colorScheme.surface,
-                    shape = MaterialTheme.shapes.large,
-                )
-                .padding(horizontal = 12.dp)
+                .padding(horizontal = 4.dp)
                 .onPreviewKeyEvent {
                     if (it.type == KeyEventType.KeyDown) screenAutoCloseState.active()
                     false
                 },
         ) {
-            Text(
-                text = "多線路",
-                modifier = Modifier.padding(horizontal = 4.dp, vertical = 12.dp),
-                style = MaterialTheme.typography.titleLarge,
-            )
-            if (isSuperAdmin) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 6.dp, end = 6.dp, top = 2.dp, bottom = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "播放線路",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = MaterialTheme.colorScheme.secondary,
+                    )
+                    Text(
+                        text = channel.name,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
                 Text(
-                    text = "管理員中轉",
-                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
+                    text = "${channel.urlList.size} 條",
                     style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.primary,
+                    color = MaterialTheme.colorScheme.tertiary,
                 )
+            }
+
+            if (isSuperAdmin) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 6.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = "連線方式",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.secondary,
+                    )
+                    Text(
+                        text = "管理員",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.tertiary,
+                    )
+                }
                 PlaybackTransportItemList(
                     modifier = Modifier.fillMaxWidth(),
                     selectedIdProvider = transportPreferenceIdProvider,
@@ -93,12 +130,37 @@ fun ChannelUrlScreen(
                     onSelected = onTransportPreferenceSelected,
                     onUserAction = { screenAutoCloseState.active() },
                 )
-                Text(
-                    text = "原始線路",
-                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp),
-                    style = MaterialTheme.typography.titleSmall,
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 6.dp, vertical = 10.dp)
+                        .height(1.dp)
+                        .background(MaterialTheme.colorScheme.borderVariant.copy(alpha = 0.5f)),
                 )
             }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 6.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "頻道線路",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.secondary,
+                )
+                if (priorityUrls.isNotEmpty()) {
+                    Text(
+                        text = "已優先 ${priorityUrls.size} 條",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.tertiary,
+                    )
+                }
+            }
+
             ChannelUrlItemList(
                 modifier = Modifier
                     .fillMaxWidth()

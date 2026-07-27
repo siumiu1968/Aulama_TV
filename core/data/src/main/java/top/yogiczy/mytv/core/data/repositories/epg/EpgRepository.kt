@@ -7,208 +7,288 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import okhttp3.Request
 import org.xmlpull.v1.XmlPullParser
-
 import top.yogiczy.mytv.core.data.entities.epg.Epg
 import top.yogiczy.mytv.core.data.entities.epg.EpgList
 import top.yogiczy.mytv.core.data.entities.epg.EpgProgramme
-import top.yogiczy.mytv.core.data.entities.epg.EpgProgrammeList
 import top.yogiczy.mytv.core.data.entities.epgsource.EpgSource
 import top.yogiczy.mytv.core.data.network.OkHttp
 import top.yogiczy.mytv.core.data.network.await
 import top.yogiczy.mytv.core.data.repositories.FileCacheRepository
-import top.yogiczy.mytv.core.data.repositories.epg.fetcher.EpgFetcher
+import top.yogiczy.mytv.core.data.utils.Globals
 import top.yogiczy.mytv.core.data.utils.Logger
-import java.io.StringReader
+import java.io.BufferedInputStream
+import java.io.InputStream
 import java.text.SimpleDateFormat
 import java.util.Locale
+import java.util.TimeZone
+import java.util.zip.GZIPInputStream
 
-/**
- * 節目單獲取
- */
+/** Fetches and parses an XMLTV guide while retaining only requested channels. */
 class EpgRepository(
-    source: EpgSource,
-) : FileCacheRepository("epg-${source.url.hashCode().toUInt().toString(16)}.json") {
+    private val source: EpgSource,
+) {
     private val log = Logger.create(javaClass.simpleName)
-    private val epgXmlRepository = EpgXmlRepository(source.url)
-
-    /**
-     * 解析節目單xml
-     */
-    private suspend fun parseFromXml(
-        xmlString: String,
-        filteredChannels: List<String> = emptyList(),
-    ) = withContext(Dispatchers.Default) {
-        val dateFormat = SimpleDateFormat("yyyyMMddHHmmss Z", Locale.getDefault())
-        val lowerFilteredChannels = filteredChannels.map { it.lowercase() }
-        val parser = Xml.newPullParser().apply {
-            setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, false)
-            setInput(StringReader(xmlString))
-        }
-
-        val epgMap = mutableMapOf<String, Epg>()
-        var currentChannelId: String? = null
-
-        fun getSafeText(): String {
-            return try {
-                parser.nextText().trim().replace("&", "&amp;")
-                    .replace("<", "&lt;")
-                    .replace(">", "&gt;")
-            } catch (e: Exception) {
-                log.e("解析XML文本失敗", e)
-                ""
-            }
-        }
-
-        val timeFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
-
-        while (parser.next() != XmlPullParser.END_DOCUMENT) {
-            try {
-                when (parser.eventType) {
-                    XmlPullParser.START_TAG -> when (parser.name) {
-                        "channel" -> {
-                            currentChannelId = parser.getAttributeValue(null, "id")
-                            parser.nextTag()
-                            val channelName = getSafeText()
-//                            log.d("解析頻道: id=$currentChannelId, name=$channelName")  // 添加日誌
-
-                            if (lowerFilteredChannels.isEmpty() ||
-                                channelName.lowercase() in lowerFilteredChannels) {
-                                epgMap[currentChannelId] = Epg(channelName, EpgProgrammeList())
-                            }
-                        }
-                        "programme" -> {
-                            val channelId = parser.getAttributeValue(null, "channel")
-                            val startTime = parser.getAttributeValue(null, "start")
-                            val stopTime = parser.getAttributeValue(null, "stop")
-                            parser.nextTag()
-                            val title = getSafeText()
-//                            log.i("解析節目: channelId=$channelId, start=$startTime, stop=$stopTime, title=$title")  // 添加日誌
-
-                            epgMap[channelId]?.let { epg ->
-                                val startAt = dateFormat.parse(startTime)?.time ?: 0
-                                val endAt = dateFormat.parse(stopTime)?.time ?: 0
-                                if (startAt == 0L || endAt == 0L) {
-                                    log.w("節目時間解析失敗: start=$startTime, stop=$stopTime")
-                                }
-
-                                val newProgramme = EpgProgramme(
-                                    startAt = startAt,
-                                    endAt = endAt,
-                                    title = title
-                                )
-
-                                // 檢查是否已存在相同時間的節目或者開始時間在其他節目結束時間之前
-                                val isDuplicate = epg.programmeList.any { prog ->
-                                    timeFormat.format(prog.startAt) == timeFormat.format(newProgramme.startAt) ||
-                                            newProgramme.startAt < prog.endAt && newProgramme.endAt > prog.startAt
-                                }
-
-                                if (!isDuplicate) {
-                                    epgMap[channelId] = epg.copy(
-                                        programmeList = epg.programmeList + newProgramme
-                                    )
-                                } else {
-                                    log.d("發現重複節目: ${newProgramme.title} (${timeFormat.format(newProgramme.startAt)})")
-                                }
-                            } ?: run {
-//                                log.w("節目所屬頻道未找到: channelId=$channelId")
-                            }
-                        }
-                    }
-                }
-            } catch (e: Exception) {
-                log.e("解析XML標籤失敗", e)
-                continue
-            }
-        }
-
-        log.i("解析節目單完成，共${epgMap.size}個頻道，${epgMap.values.sumOf { it.programmeList.size }}個節目")
-        EpgList(epgMap.values.toList())
+    private val cachePrefix = "epg-${source.url.hashCode().toUInt().toString(16)}"
+    private val usesVerifiedChannelIds = source.url.contains("/zzq1234567890/epg/") &&
+        source.url.substringBefore('?').endsWith("epg.xml.gz")
+    private val cacheJson = Json {
+        ignoreUnknownKeys = true
+        encodeDefaults = true
     }
 
-    // Add this helper function to your project
-    fun String.removeBom(): String {
-        val bom = "\uFEFF"
-        if (this.startsWith(bom)) {
-            return this.removePrefix(bom)
-        }
-        return this
-    }
-
-    /**
-     * 獲取節目單列表
-     */
     suspend fun getEpgList(
         filteredChannels: List<String> = emptyList(),
-        refreshTimeThreshold: Int,
-    ): EpgList = withContext(Dispatchers.Default) {
-        try {
-//            if (Calendar.getInstance().get(Calendar.HOUR_OF_DAY) < refreshTimeThreshold) {
-//                log.i("未到時間點，不刷新節目單")
-//                return@withContext EpgList()
-//            }
-
-            val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
-
-            val xmlJson = getOrRefresh({ lastModified, cachedContent ->
-                // 如果緩存為空，強制刷新；或者日期不一致也刷新
-                cachedContent.isNullOrEmpty() ||dateFormat.format(System.currentTimeMillis()) != dateFormat.format(lastModified)
-            }) {
-                val xmlString = epgXmlRepository.getEpgXml().removeBom()
-                Json.encodeToString(
-                    parseFromXml(
-                        xmlString,
-                        filteredChannels.map { it.lowercase() },
-                    )
-                )
-            }
-
-            return@withContext Json.decodeFromString(xmlJson)
-        } catch (ex: Exception) {
-            log.e("獲取節目單失敗", ex)
-            throw Exception(ex)
+        @Suppress("UNUSED_PARAMETER") refreshTimeThreshold: Int,
+    ): EpgList {
+        val signature = EpgChannelMatcher.filterSignature(filteredChannels)
+        val cache = EpgCache("$cachePrefix-$signature.json")
+        val dayFormat = SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).apply {
+            timeZone = TimeZone.getTimeZone(HONG_KONG_TIMEZONE)
         }
+
+        return try {
+            val cachedJson = cache.load({ lastModified, cachedContent ->
+                val isDifferentGuideDay =
+                    dayFormat.format(System.currentTimeMillis()) != dayFormat.format(lastModified)
+                val cached = cachedContent
+                    ?.takeIf(String::isNotBlank)
+                    ?.let { runCatching { cacheJson.decodeFromString<EpgList>(it) }.getOrNull() }
+
+                cachedContent.isNullOrBlank() ||
+                    isDifferentGuideDay ||
+                    cached == null ||
+                    cached.filterSignature != signature
+            }) {
+                cacheJson.encodeToString(fetchAndParse(filteredChannels, signature))
+            }
+            cacheJson.decodeFromString(cachedJson)
+        } catch (error: Exception) {
+            log.e("獲取節目單失敗", error)
+            throw Exception("獲取節目單失敗，請檢查網絡連接", error)
+        }
+    }
+
+    suspend fun clearCache() = withContext(Dispatchers.IO) {
+        Globals.cacheDir.listFiles()
+            ?.filter { it.name.startsWith(cachePrefix) }
+            ?.forEach { it.delete() }
+    }
+
+    private suspend fun fetchAndParse(
+        filteredChannels: List<String>,
+        signature: String,
+    ): EpgList = withContext(Dispatchers.IO) {
+        log.i("串流獲取節目單: ${source.url}")
+        val response = OkHttp.client.newCall(Request.Builder().url(source.url).build()).await()
+        response.use {
+            if (!it.isSuccessful) error("${it.code}: ${it.message}")
+            val body = it.body ?: error("節目單內容為空")
+            val networkStream = BufferedInputStream(body.byteStream())
+            val xmlStream: InputStream = if (source.url.substringBefore('?').endsWith(".gz")) {
+                GZIPInputStream(networkStream)
+            } else {
+                networkStream
+            }
+            xmlStream.use { input -> parseFromXml(input, filteredChannels, signature) }
+        }
+    }
+
+    private fun parseFromXml(
+        input: InputStream,
+        filteredChannels: List<String>,
+        signature: String,
+    ): EpgList {
+        val requestedGuideIds = filteredChannels
+            .map(EpgChannelMatcher::preferredGuideId)
+            .associateBy(EpgChannelMatcher::normalize)
+        val includeAll = requestedGuideIds.isEmpty()
+        val parser = Xml.newPullParser().apply {
+            setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, false)
+            setInput(input, null)
+        }
+
+        data class SelectedChannel(
+            val guideId: String,
+            val displayName: String,
+            val aliases: List<String>,
+        )
+
+        val selectedChannels = linkedMapOf<String, SelectedChannel>()
+        val selectedGuideKeys = mutableSetOf<String>()
+        val programmes = linkedMapOf<String, MutableList<EpgProgramme>>()
+        val seenProgrammeStarts = mutableMapOf<String, MutableSet<Long>>()
+
+        var channelId: String? = null
+        var channelNames = mutableListOf<String>()
+        var programmeChannelId: String? = null
+        var programmeStart = 0L
+        var programmeEnd = 0L
+        var programmeTitle = ""
+        var programmeDescription = ""
+        var programmeCategory = ""
+
+        fun readText(): String = runCatching {
+            parser.nextText().trim().replace(Regex("\\s+"), " ")
+        }.getOrDefault("")
+
+        while (parser.next() != XmlPullParser.END_DOCUMENT) {
+            when (parser.eventType) {
+                XmlPullParser.START_TAG -> when (parser.name) {
+                    "channel" -> {
+                        channelId = parser.getAttributeValue(null, "id")?.trim()
+                        channelNames = mutableListOf()
+                    }
+
+                    "display-name" -> if (channelId != null) {
+                        readText().takeIf(String::isNotBlank)?.let(channelNames::add)
+                    }
+
+                    "programme" -> {
+                        programmeChannelId = parser.getAttributeValue(null, "channel")?.trim()
+                            ?.takeIf(selectedChannels::containsKey)
+                        programmeStart = if (programmeChannelId != null) {
+                            XmlTvTimeParser.parse(parser.getAttributeValue(null, "start"))
+                        } else {
+                            0L
+                        }
+                        programmeEnd = if (programmeChannelId != null) {
+                            XmlTvTimeParser.parse(parser.getAttributeValue(null, "stop"))
+                        } else {
+                            0L
+                        }
+                        programmeTitle = ""
+                        programmeDescription = ""
+                        programmeCategory = ""
+                    }
+
+                    "title" -> if (programmeChannelId != null) {
+                        val text = readText()
+                        if (programmeTitle.isBlank()) programmeTitle = text
+                    }
+
+                    "desc" -> if (programmeChannelId != null && programmeDescription.isBlank()) {
+                        programmeDescription = readText()
+                    }
+
+                    "category" -> if (programmeChannelId != null && programmeCategory.isBlank()) {
+                        programmeCategory = readText()
+                    }
+                }
+
+                XmlPullParser.END_TAG -> when (parser.name) {
+                    "channel" -> {
+                        val sourceId = channelId
+                        if (!sourceId.isNullOrBlank()) {
+                            val observed = (listOf(sourceId) + channelNames).filter(String::isNotBlank)
+                            val matchedGuideId = if (includeAll) {
+                                sourceId
+                            } else if (usesVerifiedChannelIds) {
+                                requestedGuideIds[EpgChannelMatcher.normalize(sourceId)]
+                            } else {
+                                observed.firstNotNullOfOrNull { requestedGuideIds[EpgChannelMatcher.normalize(it)] }
+                            }
+                            val guideKey = EpgChannelMatcher.normalize(matchedGuideId.orEmpty())
+                            if (matchedGuideId != null && (includeAll || selectedGuideKeys.add(guideKey))) {
+                                selectedChannels[sourceId] = SelectedChannel(
+                                    guideId = matchedGuideId,
+                                    displayName = channelNames.firstOrNull().orEmpty().ifBlank { sourceId },
+                                    aliases = observed.distinct(),
+                                )
+                                programmes[sourceId] = mutableListOf()
+                                seenProgrammeStarts[sourceId] = mutableSetOf()
+                            }
+                        }
+                        channelId = null
+                        channelNames.clear()
+                    }
+
+                    "programme" -> {
+                        val sourceId = programmeChannelId
+                        if (
+                            sourceId != null &&
+                            programmeStart > 0L &&
+                            programmeEnd > programmeStart &&
+                            programmeTitle.isNotBlank()
+                        ) {
+                            if (seenProgrammeStarts.getValue(sourceId).add(programmeStart)) {
+                                programmes.getValue(sourceId).add(
+                                    EpgProgramme(
+                                        startAt = programmeStart,
+                                        endAt = programmeEnd,
+                                        title = programmeTitle,
+                                        description = programmeDescription,
+                                        category = programmeCategory,
+                                    )
+                                )
+                            }
+                        }
+                        programmeChannelId = null
+                    }
+                }
+            }
+        }
+
+        val epgList = selectedChannels.map { (sourceId, selected) ->
+            Epg(
+                guideId = selected.guideId,
+                channel = selected.displayName,
+                aliases = selected.aliases,
+                programmeList = programmes[sourceId].orEmpty().sortedBy(EpgProgramme::startAt),
+            )
+        }.filter { it.programmeList.isNotEmpty() }
+
+        log.i("解析節目單完成，共${epgList.size}個頻道，${epgList.sumOf { it.programmeList.size }}個節目")
+        return EpgList(
+            value = epgList,
+            source = source.name,
+            updatedAt = System.currentTimeMillis(),
+            timezone = HONG_KONG_TIMEZONE,
+            filterSignature = signature,
+        )
+    }
+
+    private companion object {
+        const val HONG_KONG_TIMEZONE = "Asia/Hong_Kong"
     }
 }
 
-/**
- * 節目單xml獲取
- */
-private class EpgXmlRepository(
-    private val url: String
-) : FileCacheRepository("epg-${url.hashCode().toUInt().toString(16)}.xml") {
-    private val log = Logger.create(javaClass.simpleName)
+private class EpgCache(fileName: String) : FileCacheRepository(fileName) {
+    suspend fun load(
+        isExpired: (lastModified: Long, cacheData: String?) -> Boolean,
+        refreshOp: suspend () -> String,
+    ): String = super.getOrRefresh(isExpired, refreshOp)
+}
 
-    /**
-     * 獲取遠程xml
-     */
-    private suspend fun fetchXml(): String {
-        log.i("獲取節目單xml: $url")
+/** XMLTV permits second, minute, hour, or date precision and an optional UTC offset. */
+internal object XmlTvTimeParser {
+    private val valuePattern = Regex("^(\\d{8,14})(?:\\s*([+-]\\d{4}|Z))?")
 
-        val client = OkHttp.client
-        val request = Request.Builder().url(url).build()
-
-        try {
-            val response = client.newCall(request).await()
-
-            if (!response.isSuccessful) throw Exception("${response.code}: ${response.message}")
-
-            val fetcher = EpgFetcher.instances.first { it.isSupport(url) }
-            return withContext(Dispatchers.IO) {
-                fetcher.fetch(response)
-            }
-        } catch (ex: Exception) {
-            log.e("獲取節目單xml失敗", ex)
-            throw Exception("獲取節目單xml失敗，請檢查網絡連接", ex)
+    fun parse(value: String?): Long {
+        val match = valuePattern.find(value?.trim().orEmpty()) ?: return 0L
+        val digits = match.groupValues[1]
+        val precision = when {
+            digits.length >= 14 -> 14
+            digits.length >= 12 -> 12
+            digits.length >= 10 -> 10
+            else -> 8
         }
-    }
-
-    /**
-     * 獲取xml
-     */
-    suspend fun getEpgXml(): String {
-        return getOrRefresh(0) {
-            fetchXml()
+        val dateValue = digits.take(precision)
+        val datePattern = when (precision) {
+            14 -> "yyyyMMddHHmmss"
+            12 -> "yyyyMMddHHmm"
+            10 -> "yyyyMMddHH"
+            else -> "yyyyMMdd"
         }
+        val offset = match.groupValues.getOrNull(2).orEmpty().replace("Z", "+0000")
+        val formatter = SimpleDateFormat(
+            if (offset.isBlank()) datePattern else "$datePattern Z",
+            Locale.ROOT,
+        ).apply {
+            isLenient = false
+            if (offset.isBlank()) timeZone = TimeZone.getTimeZone("Asia/Hong_Kong")
+        }
+        return runCatching {
+            formatter.parse(if (offset.isBlank()) dateValue else "$dateValue $offset")?.time ?: 0L
+        }.getOrDefault(0L)
     }
 }

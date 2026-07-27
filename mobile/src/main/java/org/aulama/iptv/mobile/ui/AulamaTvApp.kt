@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -97,6 +98,7 @@ import coil.compose.SubcomposeAsyncImage
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.aulama.iptv.mobile.MobileMainViewModel
+import org.aulama.iptv.mobile.MobileEpgState
 import org.aulama.iptv.mobile.MobileUiState
 import org.aulama.iptv.mobile.PairingApprovalState
 import org.aulama.iptv.mobile.R
@@ -116,6 +118,20 @@ import org.aulama.iptv.mobile.ui.player.rememberDirectPlayerState
 import org.aulama.iptv.mobile.ui.settings.SettingsScreen
 import top.yogiczy.mytv.core.data.entities.channel.Channel
 import top.yogiczy.mytv.core.data.entities.channel.ChannelRoute
+import top.yogiczy.mytv.core.data.entities.epg.EpgList
+import top.yogiczy.mytv.core.data.entities.epg.EpgList.Companion.recentProgramme
+import top.yogiczy.mytv.core.data.entities.epg.EpgProgramme
+import top.yogiczy.mytv.core.data.entities.epg.EpgProgramme.Companion.progress
+import top.yogiczy.mytv.core.data.entities.epg.EpgProgramme.Companion.remainingMinutes
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.util.Locale
+
+private val hongKongZone = ZoneId.of("Asia/Hong_Kong")
+private val programmeTimeFormatter = DateTimeFormatter
+    .ofPattern("MM/dd HH:mm", Locale.TRADITIONAL_CHINESE)
+    .withZone(hongKongZone)
 
 private data class BrowserChannel(
     val region: String,
@@ -148,6 +164,8 @@ fun AulamaTvApp(viewModel: MobileMainViewModel) {
     val pairingState by viewModel.pairingState.collectAsState()
     val playbackCandidates by viewModel.playbackCandidates.collectAsState()
     val selectedCandidateIndex by viewModel.selectedCandidateIndex.collectAsState()
+    val epgList by viewModel.epgList.collectAsState()
+    val epgState by viewModel.epgState.collectAsState()
 
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -168,6 +186,7 @@ fun AulamaTvApp(viewModel: MobileMainViewModel) {
         mutableStateOf(MobileDestination.WELCOME.name)
     }
     var pendingPairingCode by rememberSaveable { mutableStateOf<String?>(null) }
+    var epgClockMs by remember { mutableStateOf(System.currentTimeMillis()) }
     val destination = remember(destinationName) {
         runCatching { MobileDestination.valueOf(destinationName) }
             .getOrDefault(MobileDestination.HOME)
@@ -180,6 +199,13 @@ fun AulamaTvApp(viewModel: MobileMainViewModel) {
     LaunchedEffect(Unit) {
         delay(900)
         minimumSplashElapsed = true
+    }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(30_000L)
+            epgClockMs = System.currentTimeMillis()
+        }
     }
 
     LaunchedEffect(uiState, minimumSplashElapsed) {
@@ -350,7 +376,7 @@ fun AulamaTvApp(viewModel: MobileMainViewModel) {
             topBar = {
                 AulamaTopBar(
                     darkTheme = darkTheme,
-                    loading = uiState is MobileUiState.Loading,
+                    loading = uiState is MobileUiState.Loading || epgState.loading,
                     onToggleTheme = viewModel::toggleTheme,
                     onRefresh = viewModel::refresh,
                     onOpenSettings = { navigate(MobileDestination.SETTINGS) },
@@ -381,6 +407,9 @@ fun AulamaTvApp(viewModel: MobileMainViewModel) {
                             query = query,
                             favoritesOnly = favoritesOnly,
                             favorites = favorites,
+                            epgList = epgList,
+                            epgState = epgState,
+                            currentTimeMs = epgClockMs,
                             viewModel = viewModel,
                             onFullscreen = { fullscreen = true },
                             onShowRoutes = { showRouteSheet = true },
@@ -396,6 +425,9 @@ fun AulamaTvApp(viewModel: MobileMainViewModel) {
                             query = query,
                             favoritesOnly = favoritesOnly,
                             favorites = favorites,
+                            epgList = epgList,
+                            epgState = epgState,
+                            currentTimeMs = epgClockMs,
                             viewModel = viewModel,
                             onFullscreen = { fullscreen = true },
                             onShowRoutes = { showRouteSheet = true },
@@ -551,6 +583,9 @@ private fun PhoneLayout(
     query: String,
     favoritesOnly: Boolean,
     favorites: Set<String>,
+    epgList: EpgList,
+    epgState: MobileEpgState,
+    currentTimeMs: Long,
     viewModel: MobileMainViewModel,
     onFullscreen: () -> Unit,
     onShowRoutes: () -> Unit,
@@ -572,6 +607,9 @@ private fun PhoneLayout(
             route = currentCandidate?.route,
             routeIndex = selectedRouteIndex,
             status = playerState.status,
+            epgList = epgList,
+            epgState = epgState,
+            currentTimeMs = currentTimeMs,
             onShowRoutes = onShowRoutes,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
         )
@@ -582,6 +620,7 @@ private fun PhoneLayout(
             query = query,
             favoritesOnly = favoritesOnly,
             favorites = favorites,
+            epgList = epgList,
             viewModel = viewModel,
             modifier = Modifier.weight(1f),
         )
@@ -599,6 +638,9 @@ private fun WideLayout(
     query: String,
     favoritesOnly: Boolean,
     favorites: Set<String>,
+    epgList: EpgList,
+    epgState: MobileEpgState,
+    currentTimeMs: Long,
     viewModel: MobileMainViewModel,
     onFullscreen: () -> Unit,
     onShowRoutes: () -> Unit,
@@ -629,6 +671,9 @@ private fun WideLayout(
                 route = currentCandidate?.route,
                 routeIndex = selectedRouteIndex,
                 status = playerState.status,
+                epgList = epgList,
+                epgState = epgState,
+                currentTimeMs = currentTimeMs,
                 onShowRoutes = onShowRoutes,
                 modifier = Modifier.padding(top = 12.dp),
             )
@@ -646,6 +691,7 @@ private fun WideLayout(
             query = query,
             favoritesOnly = favoritesOnly,
             favorites = favorites,
+            epgList = epgList,
             viewModel = viewModel,
             modifier = Modifier
                 .weight(1f)
@@ -660,49 +706,159 @@ private fun NowPlayingStrip(
     route: ChannelRoute?,
     routeIndex: Int,
     status: PlaybackStatus,
+    epgList: EpgList,
+    epgState: MobileEpgState,
+    currentTimeMs: Long,
     onShowRoutes: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Row(
+    val programmes = selectedChannel?.channel?.let { epgList.recentProgramme(it) }
+    Column(
         modifier = modifier
-            .fillMaxWidth()
-            .height(64.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .fillMaxWidth(),
     ) {
-        Column(Modifier.weight(1f)) {
-            Text(
-                text = selectedChannel?.channel?.name ?: "揀選頻道開始播放",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Rounded.SignalCellularAlt,
-                    contentDescription = null,
-                    tint = statusColor(status),
-                    modifier = Modifier.size(15.dp),
-                )
-                Spacer(Modifier.width(5.dp))
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 58.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
                 Text(
-                    text = statusLabel(status),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    text = selectedChannel?.channel?.name ?: "揀選頻道開始播放",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
-                route?.let {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Rounded.SignalCellularAlt,
+                        contentDescription = null,
+                        tint = statusColor(status),
+                        modifier = Modifier.size(15.dp),
+                    )
+                    Spacer(Modifier.width(5.dp))
                     Text(
-                        text = " · ${it.quality.label}",
+                        text = statusLabel(status),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    route?.let {
+                        Text(
+                            text = " · ${it.quality.label}",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+
+            if ((selectedChannel?.channel?.routes?.size ?: 0) > 1) {
+                TextButton(onClick = onShowRoutes) {
+                    Text("線路 ${routeIndex + 1}/${selectedChannel!!.channel.routes.size}")
                 }
             }
         }
 
-        if ((selectedChannel?.channel?.routes?.size ?: 0) > 1) {
-            TextButton(onClick = onShowRoutes) {
-                Text("線路 ${routeIndex + 1}/${selectedChannel!!.channel.routes.size}")
+        programmes?.now?.let { now ->
+            ProgrammeSummary(
+                now = now,
+                next = programmes.next,
+                currentTimeMs = currentTimeMs,
+            )
+        } ?: selectedChannel?.let {
+            val message = when {
+                epgState.loading -> "正在載入節目單"
+                epgState.error != null -> epgState.error
+                else -> null
+            }
+            if (message != null) {
+                Text(
+                    text = message,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 8.dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProgrammeSummary(
+    now: EpgProgramme,
+    next: EpgProgramme?,
+    currentTimeMs: Long,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(5.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = "現正播放",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.width(68.dp),
+            )
+            Text(
+                text = now.title,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = programmeWindow(now),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                modifier = Modifier.weight(1f),
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = "尚餘 ${now.remainingMinutes(currentTimeMs)} 分鐘",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+            )
+        }
+        LinearProgressIndicator(
+            progress = { now.progress(currentTimeMs) },
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(3.dp),
+        )
+        next?.let {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "下一節",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.secondary,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.width(68.dp),
+                )
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        text = it.title,
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = programmeWindow(it),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                    )
+                }
             }
         }
     }
@@ -716,6 +872,7 @@ private fun ChannelBrowser(
     query: String,
     favoritesOnly: Boolean,
     favorites: Set<String>,
+    epgList: EpgList,
     viewModel: MobileMainViewModel,
     modifier: Modifier = Modifier,
 ) {
@@ -821,6 +978,7 @@ private fun ChannelBrowser(
                                 selected = selectedChannel?.region == item.region &&
                                     selectedChannel.channel.name == item.channel.name,
                                 favorite = viewModel.favoriteKey(item.region, item.channel) in favorites,
+                                currentProgramme = epgList.recentProgramme(item.channel)?.now,
                                 onSelect = { viewModel.selectChannel(item.region, item.channel) },
                                 onToggleFavorite = { viewModel.toggleFavorite(item.region, item.channel) },
                             )
@@ -837,6 +995,7 @@ private fun ChannelRow(
     item: BrowserChannel,
     selected: Boolean,
     favorite: Boolean,
+    currentProgramme: EpgProgramme?,
     onSelect: () -> Unit,
     onToggleFavorite: () -> Unit,
 ) {
@@ -888,6 +1047,19 @@ private fun ChannelRow(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
+                currentProgramme?.let {
+                    Text(
+                        text = "現正播放 · ${it.title}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (selected) {
+                            MaterialTheme.colorScheme.onPrimaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.primary
+                        },
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
             IconButton(onClick = onToggleFavorite) {
                 Icon(
@@ -1057,6 +1229,10 @@ private fun browserChannels(
             it.channel.epgName.contains(normalizedQuery, ignoreCase = true)
     }
 }
+
+private fun programmeWindow(programme: EpgProgramme): String =
+    "${programmeTimeFormatter.format(Instant.ofEpochMilli(programme.startAt))} - " +
+        programmeTimeFormatter.format(Instant.ofEpochMilli(programme.endAt))
 
 @Composable
 private fun statusColor(status: PlaybackStatus) = when (status) {

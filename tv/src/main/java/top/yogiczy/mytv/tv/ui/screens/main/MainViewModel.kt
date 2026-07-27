@@ -170,12 +170,7 @@ class MainViewModel : ViewModel() {
             val channelGroupList = (_uiState.value as MainUiState.Ready).channelGroupList
 
             flow {
-                emit(
-                    EpgRepository(Configs.epgSourceCurrent).getEpgList(
-                        filteredChannels = channelGroupList.channelList.map { it.epgName },
-                        refreshTimeThreshold = Configs.epgRefreshTimeThreshold,
-                    )
-                )
+                emit(loadEpgList(channelGroupList))
             }
                 .retry(Constants.HTTP_RETRY_COUNT) { delay(Constants.HTTP_RETRY_INTERVAL); true }
                 .catch {
@@ -189,6 +184,61 @@ class MainViewModel : ViewModel() {
                 }
                 .collect()
         }
+    }
+
+    private suspend fun loadEpgList(channelGroupList: ChannelGroupList): EpgList {
+        val currentSource = Configs.epgSourceCurrent
+        if (currentSource.url != Constants.EPG_SOURCE_TRADITIONAL.url) {
+            return EpgRepository(currentSource).getEpgList(
+                filteredChannels = channelGroupList.channelList.map { it.epgName.ifBlank { it.name } },
+                refreshTimeThreshold = Configs.epgRefreshTimeThreshold,
+            )
+        }
+
+        val (mainlandGroups, otherGroups) = channelGroupList.partition { group ->
+            group.name.contains("中國") || group.name.contains("中国") || group.name.contains("內地")
+        }
+        val requests = buildList {
+            val traditionalChannels = otherGroups.flatMap { it.channelList }
+                .map { it.epgName.ifBlank { it.name } }
+            if (traditionalChannels.isNotEmpty()) {
+                add(Constants.EPG_SOURCE_TRADITIONAL to traditionalChannels)
+            }
+            val simplifiedChannels = mainlandGroups.flatMap { it.channelList }
+                .map { it.epgName.ifBlank { it.name } }
+            if (simplifiedChannels.isNotEmpty()) {
+                add(Constants.EPG_SOURCE_SIMPLIFIED to simplifiedChannels)
+            }
+        }
+
+        val results = supervisorScope {
+            requests.map { (source, channels) ->
+                async {
+                    runCatching {
+                        EpgRepository(source).getEpgList(
+                            filteredChannels = channels,
+                            refreshTimeThreshold = Configs.epgRefreshTimeThreshold,
+                        )
+                    }.recoverCatching {
+                        val fallback = if (source.url == Constants.EPG_SOURCE_TRADITIONAL.url) {
+                            Constants.EPG_SOURCE_SIMPLIFIED
+                        } else {
+                            Constants.EPG_SOURCE_TRADITIONAL
+                        }
+                        EpgRepository(fallback).getEpgList(
+                            filteredChannels = channels,
+                            refreshTimeThreshold = Configs.epgRefreshTimeThreshold,
+                        )
+                    }
+                }
+            }.awaitAll()
+        }
+        val available = results.mapNotNull { it.getOrNull() }.filter { it.isNotEmpty() }
+        if (available.isEmpty()) {
+            throw results.firstNotNullOfOrNull { it.exceptionOrNull() }
+                ?: IllegalStateException("節目單內容為空")
+        }
+        return EpgList.merge(*available.toTypedArray())
     }
 }
 

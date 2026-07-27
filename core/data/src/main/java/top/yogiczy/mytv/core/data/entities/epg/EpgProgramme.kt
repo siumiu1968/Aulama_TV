@@ -24,6 +24,12 @@ data class EpgProgramme(
      * 節目名稱
      */
     val title: String = "",
+
+    /** Optional programme description supplied by XMLTV. */
+    val description: String = "",
+
+    /** Optional programme category supplied by XMLTV. */
+    val category: String = "",
 ) {
     companion object {
         /**
@@ -34,11 +40,13 @@ data class EpgProgramme(
         /**
          * 節目進度
          */
-        fun EpgProgramme.progress(current: Long = System.currentTimeMillis()) =
-            (current - startAt).toFloat() / (endAt - startAt)
+        fun EpgProgramme.progress(current: Long = System.currentTimeMillis()): Float {
+            if (endAt <= startAt) return 0f
+            return ((current - startAt).toFloat() / (endAt - startAt)).coerceIn(0f, 1f)
+        }
 
         fun EpgProgramme.remainingMinutes(current: Long = System.currentTimeMillis()) =
-            ceil((endAt - current) / 60_000f).roundToInt()
+            ceil((endAt - current).coerceAtLeast(0L) / 60_000f).roundToInt()
 
         val EXAMPLE = EpgProgramme(
             startAt = System.currentTimeMillis() - 3600 * 1000,

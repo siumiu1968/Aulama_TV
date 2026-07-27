@@ -14,6 +14,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.delay
 import top.yogiczy.mytv.core.data.entities.channel.Channel
 import top.yogiczy.mytv.core.data.entities.epg.Epg
 import top.yogiczy.mytv.core.data.entities.epg.EpgProgramme
@@ -30,15 +31,28 @@ fun EpgProgrammeItemList(
     epgProgrammeReserveListProvider: () -> EpgProgrammeReserveList = { EpgProgrammeReserveList() },
     supportPlaybackProvider: () -> Boolean = { false },
     currentPlaybackProvider: () -> EpgProgramme? = { null },
+    currentTimeProvider: () -> Long = { System.currentTimeMillis() },
     onPlayback: (EpgProgramme) -> Unit = {},
     onReserve: (EpgProgramme) -> Unit = {},
     focusOnLive: Boolean = true,
     onUserAction: () -> Unit = {},
 ) {
     val epgProgrammeList = epgProgrammeListProvider()
-    val itemFocusRequesterList = List(epgProgrammeList.size) { FocusRequester() }
+    val itemFocusRequesterList = androidx.compose.runtime.remember(epgProgrammeList) {
+        List(epgProgrammeList.size) { FocusRequester() }
+    }
 
-    val listState = LazyListState(max(0, epgProgrammeList.indexOfFirst { it.isLive() } - 2))
+    val liveProgrammeIndex = epgProgrammeList.indexOfFirst { it.isLive() }
+    val initialProgrammeIndex = max(0, liveProgrammeIndex - 1)
+    val listState = androidx.compose.runtime.remember(epgProgrammeList) {
+        LazyListState(initialProgrammeIndex)
+    }
+    LaunchedEffect(listState, liveProgrammeIndex) {
+        if (liveProgrammeIndex >= 0) {
+            delay(120)
+            listState.scrollToItem(initialProgrammeIndex)
+        }
+    }
     LaunchedEffect(listState) {
         snapshotFlow { listState.isScrollInProgress }
             .distinctUntilChanged()
@@ -64,6 +78,7 @@ fun EpgProgrammeItemList(
                 epgProgrammeProvider = { programme },
                 supportPlaybackProvider = supportPlaybackProvider,
                 isPlaybackProvider = { currentPlaybackProvider() == programme },
+                currentTimeProvider = currentTimeProvider,
                 hasReservedProvider = { epgProgrammeReserveListProvider().firstOrNull { it.programme == programme.title } != null },
                 onPlayback = { onPlayback(programme) },
                 onReserve = { onReserve(programme) },

@@ -1,9 +1,15 @@
 package top.yogiczy.mytv.tv.ui.screens.settings.components
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
@@ -18,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.Icon
@@ -45,69 +52,98 @@ fun SettingsListItem(
 ) {
     val popupManager = LocalPopupManager.current
     val focusRequester = remember { FocusRequester() }
+    val itemShape = RoundedCornerShape(6.dp)
 
     var showPush by remember { mutableStateOf(false) }
 
-    ListItem(
-        selected = false,
-        onClick = {},
-        shape = ListItemDefaults.shape(shape = RoundedCornerShape(14.dp)),
-        colors = ListItemDefaults.colors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f),
-            focusedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-            focusedContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-            pressedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-            pressedContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-        ),
-        scale = ListItemDefaults.scale(focusedScale = 1.018f),
-        border = ListItemDefaults.border(
-            focusedBorder = Border(
-                border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary),
-                shape = RoundedCornerShape(14.dp),
+    Column(modifier = Modifier.fillMaxWidth()) {
+        ListItem(
+            selected = false,
+            onClick = {},
+            shape = ListItemDefaults.shape(shape = itemShape),
+            colors = ListItemDefaults.colors(
+                containerColor = androidx.compose.ui.graphics.Color.Transparent,
+                focusedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                focusedContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                pressedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                pressedContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
             ),
-        ),
-        headlineContent = { Text(text = headlineContent) },
-        trailingContent = {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-            ) {
-                trailingContent()
-                trailingIcon?.let {
-                    Icon(it, contentDescription = null, modifier = Modifier.size(16.dp))
-                }
-
-                if (locK) {
-                    Icon(
-                        Icons.Default.Lock,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp),
-                    )
-                }
-
-                if (remoteConfig) {
-                    Icon(
-                        Icons.AutoMirrored.Default.OpenInNew,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp),
-                    )
-                }
-            }
-        },
-        supportingContent = { supportingContent?.let { Text(it) } },
-        modifier = modifier
-            .focusRequester(focusRequester)
-            .handleKeyEvents(
-                onSelect = {
-                    if (onSelected != null) onSelected()
-                    else if (remoteConfig) {
-                        popupManager.push(focusRequester, true)
-                        showPush = true
+            scale = ListItemDefaults.scale(focusedScale = 1f),
+            border = ListItemDefaults.border(
+                focusedBorder = Border(
+                    border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary),
+                    shape = itemShape,
+                ),
+            ),
+            headlineContent = {
+                Text(
+                    text = headlineContent,
+                    style = MaterialTheme.typography.titleSmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            },
+            trailingContent = {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                ) {
+                    trailingContent()
+                    trailingIcon?.let {
+                        Icon(it, contentDescription = null, modifier = Modifier.size(17.dp))
                     }
-                },
-                onLongSelect = { onLongSelected() },
-            ),
-    )
+
+                    if (locK) {
+                        Icon(
+                            Icons.Default.Lock,
+                            contentDescription = null,
+                            modifier = Modifier.size(17.dp),
+                        )
+                    }
+
+                    if (remoteConfig) {
+                        Icon(
+                            Icons.AutoMirrored.Default.OpenInNew,
+                            contentDescription = null,
+                            modifier = Modifier.size(17.dp),
+                        )
+                    }
+                }
+            },
+            supportingContent = {
+                supportingContent?.let {
+                    Text(
+                        text = it,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            },
+            modifier = modifier
+                .fillMaxWidth()
+                .heightIn(min = 62.dp)
+                .focusRequester(focusRequester)
+                .handleKeyEvents(
+                    onSelect = {
+                        if (onSelected != null) onSelected()
+                        else if (remoteConfig) {
+                            popupManager.push(focusRequester, true)
+                            showPush = true
+                        }
+                    },
+                    onLongSelect = { onLongSelected() },
+                ),
+        )
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(1.dp)
+                .background(MaterialTheme.colorScheme.borderVariant.copy(alpha = 0.28f)),
+        )
+    }
 
     SimplePopup(
         visibleProvider = { showPush },
@@ -133,7 +169,15 @@ fun SettingsListItem(
         modifier = modifier,
         headlineContent = headlineContent,
         supportingContent = supportingContent,
-        trailingContent = { Text(trailingContent) },
+        trailingContent = {
+            Text(
+                text = trailingContent,
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.secondary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        },
         trailingIcon = trailingIcon,
         onSelected = onSelected,
         onLongSelected = onLongSelected,

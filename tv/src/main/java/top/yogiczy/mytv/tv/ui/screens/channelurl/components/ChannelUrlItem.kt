@@ -1,12 +1,15 @@
 package top.yogiczy.mytv.tv.ui.screens.channelurl.components
 
 import android.view.KeyEvent
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.StarBorder
@@ -29,15 +32,17 @@ import androidx.compose.ui.unit.dp
 import androidx.tv.material3.Icon
 import androidx.tv.material3.IconButton
 import androidx.tv.material3.ListItem
+import androidx.tv.material3.ListItemDefaults
+import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.RadioButton
 import androidx.tv.material3.Text
+import androidx.tv.material3.Border
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.Request
 import top.yogiczy.mytv.core.data.network.OkHttp
 import top.yogiczy.mytv.core.data.utils.ChannelUtil
 import top.yogiczy.mytv.core.util.utils.isIPv6
-import top.yogiczy.mytv.tv.ui.material.Tag
 import top.yogiczy.mytv.tv.ui.theme.MyTVTheme
 import top.yogiczy.mytv.tv.ui.utils.saveRequestFocus
 import java.io.IOException
@@ -64,6 +69,7 @@ fun ChannelUrlItem(
     val priorityFocusRequester = remember(url) { FocusRequester() }
 
     val urlDelay = rememberUrlDelay(url)
+    val itemShape = RoundedCornerShape(6.dp)
 
     LaunchedEffect(isSelected, focusSelectedOnLaunch) {
         if (isSelected && focusSelectedOnLaunch) rowFocusRequester.saveRequestFocus()
@@ -71,27 +77,61 @@ fun ChannelUrlItem(
 
     ListItem(
         modifier = modifier
+            .height(66.dp)
             .focusRequester(rowFocusRequester)
             .focusProperties { right = priorityFocusRequester },
-        selected = false,
+        selected = isSelected,
         onClick = onSelected,
+        shape = ListItemDefaults.shape(shape = itemShape),
+        colors = ListItemDefaults.colors(
+            containerColor = androidx.compose.ui.graphics.Color.Transparent,
+            contentColor = MaterialTheme.colorScheme.onSurface,
+            focusedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+            focusedContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+            selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.28f),
+            selectedContentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+            focusedSelectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+            focusedSelectedContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        ),
+        scale = ListItemDefaults.scale(focusedScale = 1f),
+        border = ListItemDefaults.border(
+            focusedBorder = Border(
+                border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary),
+                shape = itemShape,
+            ),
+        ),
         headlineContent = {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("線路${urlIdx + 1}", maxLines = 1)
+                Text(
+                    text = "線路 ${urlIdx + 1}",
+                    style = MaterialTheme.typography.titleSmall,
+                    maxLines = 1,
+                )
 
                 if (ChannelUtil.isHybridWebViewUrl(url)) {
-                    Tag("混合 · ${ChannelUtil.getHybridWebViewUrlProvider(url)}")
+                    Text(
+                        text = "混合 · ${ChannelUtil.getHybridWebViewUrlProvider(url)}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.secondary,
+                        maxLines = 1,
+                    )
                 } else {
                     val routeInfo = buildList {
                         if (ChannelUtil.urlSupportPlayback(url)) add("回放")
                         add(if (url.isIPv6()) "IPV6" else "IPV4")
                         if (urlDelay != 0L) add("$urlDelay ms")
                     }.joinToString(" · ")
-                    Tag(routeInfo)
+                    Text(
+                        text = routeInfo,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.secondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 }
             }
         },
@@ -99,6 +139,8 @@ fun ChannelUrlItem(
             Text(
                 text = url,
                 modifier = Modifier.fillMaxWidth(),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -108,10 +150,16 @@ fun ChannelUrlItem(
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                priorityRank?.let { Text(it.toString()) }
+                priorityRank?.let {
+                    Text(
+                        text = "#$it",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.tertiary,
+                    )
+                }
                 IconButton(
                     modifier = Modifier
-                        .size(36.dp)
+                        .size(44.dp)
                         .focusRequester(priorityFocusRequester)
                         .focusProperties {
                             left = rowFocusRequester
@@ -142,7 +190,7 @@ fun ChannelUrlItem(
                         } else {
                             "取消優先線路 $priorityRank"
                         },
-                        modifier = Modifier.size(20.dp),
+                        modifier = Modifier.size(19.dp),
                     )
                 }
                 RadioButton(selected = isSelected, onClick = null)

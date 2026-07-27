@@ -2,13 +2,10 @@ package top.yogiczy.mytv.tv.ui.screens.main
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -32,7 +29,7 @@ import androidx.tv.material3.LocalTextStyle
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import top.yogiczy.mytv.core.data.entities.channel.ChannelGroupList
-import top.yogiczy.mytv.tv.ui.material.CircularProgressIndicator
+import top.yogiczy.mytv.tv.ui.material.AulamaBrandSplash
 import top.yogiczy.mytv.tv.ui.material.Visible
 import top.yogiczy.mytv.tv.ui.rememberChildPadding
 import top.yogiczy.mytv.tv.ui.screens.main.components.MainContent
@@ -78,7 +75,7 @@ fun MainScreen(
         )
 
         is MainUiState.Loading -> MainScreenSettingsWrapper(onBackPressed = onBackPressed) {
-            MainScreenLoading(messageProvider = { s.message })
+            MainScreenLoading()
         }
 
         is MainUiState.Error -> MainScreenSettingsWrapper(onBackPressed = onBackPressed) {
@@ -129,25 +126,8 @@ fun MainScreenMessage(
 @Composable
 private fun MainScreenLoading(
     modifier: Modifier = Modifier,
-    messageProvider: () -> String? = { null }
 ) {
-    MainScreenMessage(
-        modifier = modifier,
-        title = {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text("加載中")
-                CircularProgressIndicator(
-                    modifier = Modifier.size(22.dp),
-                    color = LocalContentColor.current,
-                    strokeWidth = 3.dp,
-                )
-            }
-        },
-        messageProvider = messageProvider
-    )
+    AulamaBrandSplash(modifier = modifier)
 }
 
 @Preview(device = "id:Android TV (720p)")
@@ -155,9 +135,7 @@ private fun MainScreenLoading(
 private fun MainScreenLoadingPreview() {
     MyTVTheme {
         PreviewWithLayoutGrids {
-            MainScreenLoading(
-                messageProvider = { "獲取遠程直播源(4/10)".repeat(10) }
-            )
+            MainScreenLoading()
         }
     }
 }

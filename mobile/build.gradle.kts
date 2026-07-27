@@ -24,8 +24,8 @@ android {
         applicationId = "org.aulama.iptv"
         minSdk = libs.versions.minSdk.get().toInt()
         targetSdk = libs.versions.targetSdk.get().toInt()
-        versionCode = 4
-        versionName = "1.1.2"
+        versionCode = 5
+        versionName = "1.1.3"
 
         vectorDrawables.useSupportLibrary = true
         ndk.abiFilters.addAll(listOf("armeabi-v7a", "arm64-v8a"))

@@ -34,6 +34,7 @@ jobs:
           fi
           [[ "$TAG" == android-v* ]] || { echo "Invalid Android tag: $TAG"; exit 1; }
           echo "TAG=$TAG" >> "$GITHUB_ENV"
+          echo "MOBILE_VERSION=${TAG#android-v}" >> "$GITHUB_ENV"
 
       - name: Set up JDK
         uses: actions/setup-java@v4
@@ -71,7 +72,7 @@ jobs:
         with:
           files: ${{ steps.apk.outputs.apk_path }}
           tag_name: ${{ env.TAG }}
-          name: Aulama TV Android 1.0.0
+          name: Aulama IPTV Android ${{ env.MOBILE_VERSION }}
           draft: false
           prerelease: false
           make_latest: false

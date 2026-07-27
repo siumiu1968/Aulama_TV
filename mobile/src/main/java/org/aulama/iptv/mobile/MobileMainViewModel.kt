@@ -30,7 +30,9 @@ import org.aulama.iptv.mobile.data.playback.PlaybackPlanPolicy
 import org.aulama.iptv.mobile.data.playback.RouteHealthStore
 import top.yogiczy.mytv.core.data.entities.channel.Channel
 import top.yogiczy.mytv.core.data.entities.channel.ChannelGroupList.Companion.channelList
+import top.yogiczy.mytv.core.data.entities.epg.EpgList
 import top.yogiczy.mytv.core.data.entities.iptvsource.IptvSource
+import top.yogiczy.mytv.core.data.repositories.epg.EpgRepository
 import top.yogiczy.mytv.core.data.repositories.iptv.IptvRepository
 import top.yogiczy.mytv.core.data.utils.Constants
 import java.io.IOException
@@ -45,6 +47,11 @@ sealed interface MobileUiState {
     data class Ready(val regions: List<RegionChannels>) : MobileUiState
     data class Error(val message: String) : MobileUiState
 }
+
+data class MobileEpgState(
+    val loading: Boolean = false,
+    val error: String? = null,
+)
 
 data class SelectedChannel(
     val region: String,
@@ -80,6 +87,12 @@ class MobileMainViewModel(application: Application) : AndroidViewModel(applicati
 
     private val _uiState = MutableStateFlow<MobileUiState>(MobileUiState.Loading)
     val uiState: StateFlow<MobileUiState> = _uiState.asStateFlow()
+
+    private val _epgList = MutableStateFlow(EpgList())
+    val epgList: StateFlow<EpgList> = _epgList.asStateFlow()
+
+    private val _epgState = MutableStateFlow(MobileEpgState())
+    val epgState: StateFlow<MobileEpgState> = _epgState.asStateFlow()
 
     private val _selectedRegion = MutableStateFlow(
         preferences.getString(KEY_LAST_REGION, "香港") ?: "香港"
@@ -132,6 +145,7 @@ class MobileMainViewModel(application: Application) : AndroidViewModel(applicati
 
     private var syncPushJob: Job? = null
     private var playbackPlanJob: Job? = null
+    private var epgRefreshJob: Job? = null
     private var playbackPlanGeneration = 0L
     private var lastReconciledAccountId: String? = null
     private val fourKCapable = DevicePlaybackCapabilities.supportsHevc4k()
@@ -156,6 +170,8 @@ class MobileMainViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     fun refresh() {
+        epgRefreshJob?.cancel()
+        _epgState.value = _epgState.value.copy(loading = false)
         viewModelScope.launch {
             _uiState.value = MobileUiState.Loading
             val builtInSources = Constants.AULAMA_REGION_SOURCE_LIST
@@ -192,6 +208,115 @@ class MobileMainViewModel(application: Application) : AndroidViewModel(applicati
 
             _uiState.value = MobileUiState.Ready(loaded)
             restoreSelection(loaded)
+            refreshEpg(loaded)
+        }
+    }
+
+    private fun refreshEpg(regions: List<RegionChannels>) {
+        epgRefreshJob?.cancel()
+        epgRefreshJob = viewModelScope.launch {
+            _epgState.value = MobileEpgState(loading = true)
+            val requests = buildList {
+                val traditionalChannels = regions
+                    .filterNot {
+                        it.name.contains("中國") || it.name.contains("中国") || it.name.contains("內地")
+                    }
+                    .flatMap(RegionChannels::channels)
+                    .map { it.epgName.ifBlank { it.name } }
+                if (traditionalChannels.isNotEmpty()) {
+                    add(
+                        Triple(
+                            Constants.EPG_SOURCE_TRADITIONAL,
+                            Constants.EPG_SOURCE_SIMPLIFIED,
+                            traditionalChannels,
+                        )
+                    )
+                }
+
+                val simplifiedChannels = regions
+                    .filter {
+                        it.name.contains("中國") || it.name.contains("中国") || it.name.contains("內地")
+                    }
+                    .flatMap(RegionChannels::channels)
+                    .map { it.epgName.ifBlank { it.name } }
+                if (simplifiedChannels.isNotEmpty()) {
+                    add(
+                        Triple(
+                            Constants.EPG_SOURCE_SIMPLIFIED,
+                            Constants.EPG_SOURCE_TRADITIONAL,
+                            simplifiedChannels,
+                        )
+                    )
+                }
+            }
+
+            if (requests.isEmpty()) {
+                _epgState.value = MobileEpgState()
+                return@launch
+            }
+
+            val primaryResults = supervisorScope {
+                requests.map { (primarySource, _, channels) ->
+                    async {
+                        runCatching {
+                            EpgRepository(primarySource).getEpgList(
+                                filteredChannels = channels,
+                                refreshTimeThreshold = Constants.EPG_REFRESH_TIME_THRESHOLD,
+                            )
+                        }
+                    }
+                }.awaitAll()
+            }
+
+            val results = supervisorScope {
+                requests.zip(primaryResults).map { (request, primaryResult) ->
+                    async {
+                        val primaryEpg = primaryResult.getOrNull()
+                        if (primaryEpg != null && primaryEpg.isNotEmpty()) {
+                            Result.success(primaryEpg)
+                        } else {
+                            val (_, fallbackSource, channels) = request
+                            runCatching {
+                                EpgRepository(fallbackSource).getEpgList(
+                                    filteredChannels = channels,
+                                    refreshTimeThreshold = Constants.EPG_REFRESH_TIME_THRESHOLD,
+                                ).also {
+                                    check(it.isNotEmpty()) { "後備節目單未有匹配資料" }
+                                }
+                            }
+                        }
+                    }
+                }.awaitAll()
+            }
+
+            val available = results.mapNotNull { it.getOrNull() }.filter { it.isNotEmpty() }
+            if (available.isEmpty()) {
+                _epgState.value = MobileEpgState(
+                    error = if (_epgList.value.isEmpty()) {
+                        "節目單暫時未能載入"
+                    } else {
+                        "節目單暫時未能更新，舊資料已保留"
+                    },
+                )
+                return@launch
+            }
+
+            val merged = EpgList.merge(*available.toTypedArray())
+            if (merged.isEmpty()) {
+                _epgState.value = MobileEpgState(
+                    error = if (_epgList.value.isEmpty()) {
+                        "暫時未有節目單資料"
+                    } else {
+                        "節目單暫時未能更新，舊資料已保留"
+                    },
+                )
+                return@launch
+            }
+
+            _epgList.value = merged
+            _epgState.value = MobileEpgState(
+                error = if (results.any { it.isFailure }) "部分頻道節目單暫時未能更新" else null,
+            )
         }
     }
 
@@ -530,6 +655,7 @@ class MobileMainViewModel(application: Application) : AndroidViewModel(applicati
 
     override fun onCleared() {
         playbackPlanJob?.cancel()
+        epgRefreshJob?.cancel()
         accountManager.close()
         super.onCleared()
     }

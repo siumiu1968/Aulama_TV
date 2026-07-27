@@ -10,10 +10,16 @@ import java.util.Calendar
  */
 @Serializable
 data class Epg(
+    /** Preferred XMLTV channel id used for deterministic matching. */
+    val guideId: String = "",
+
     /**
      * 頻道名稱
      */
     val channel: String = "",
+
+    /** XMLTV id and display-name aliases observed in the source. */
+    val aliases: List<String> = emptyList(),
 
     /**
      * 節目列表
@@ -38,7 +44,7 @@ data class Epg(
             val liveProgramIndex = sortedProgrammeList.binarySearch {
                 when {
                     currentTime < it.startAt -> 1
-                    currentTime > it.endAt -> -1
+                    currentTime >= it.endAt -> -1
                     else -> 0
                 }
             }
@@ -57,6 +63,7 @@ data class Epg(
 
         fun example(channel: Channel): Epg {
             return Epg(
+                guideId = channel.epgName,
                 channel = channel.epgName,
                 programmeList = EpgProgrammeList(
                     List(100) { index ->
@@ -88,6 +95,7 @@ data class Epg(
             }
 
             return Epg(
+                guideId = channel.epgName,
                 channel = channel.epgName,
                 programmeList = EpgProgrammeList(
                     listOf(
