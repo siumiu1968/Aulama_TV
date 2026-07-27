@@ -21,8 +21,48 @@ import top.yogiczy.mytv.tv.ui.utils.Configs
 import top.yogiczy.mytv.tv.account.aulamaRequestHeaders
 
 private const val PLAYBACK_HEALTH_MIN_PROGRESS_MS = 1_500L
-private const val PLAYBACK_HEALTH_BAD_SAMPLE_LIMIT = 2
-private const val PLAYBACK_HEALTH_MAX_AV_DRIFT_SECONDS = 0.12f
+private const val PLAYBACK_HEALTH_BAD_SAMPLE_LIMIT = 3
+private const val PLAYBACK_HEALTH_MAX_AV_DRIFT_SECONDS = 0.75f
+
+internal enum class IJKPlaybackHealthIssue(val reasonCode: String) {
+    STALLED("ijk-playback-stalled"),
+    SLOW_RENDERING("ijk-slow-rendering"),
+    DECODE_STALLED("ijk-decode-stalled"),
+    AV_SYNC_DRIFT("ijk-av-sync-drift"),
+}
+
+internal fun playbackHealthIssue(
+    outputFps: Float,
+    decodeFps: Float,
+    progressDelta: Long,
+    minimumFps: Float,
+    hasObservedOutputFps: Boolean,
+    hasObservedDecodeFps: Boolean,
+    avDifferenceSeconds: Float = Float.NaN,
+): IJKPlaybackHealthIssue? {
+    val positionStalled = progressDelta < PLAYBACK_HEALTH_MIN_PROGRESS_MS
+    if (positionStalled) return IJKPlaybackHealthIssue.STALLED
+
+    val outputFpsAvailableNow = outputFps.isFinite() && outputFps > 0f
+    val decodeFpsAvailableNow = decodeFps.isFinite() && decodeFps > 0f
+    val outputTooLow = when {
+        outputFpsAvailableNow -> outputFps < minimumFps
+        hasObservedOutputFps && outputFps.isFinite() -> outputFps <= 0f
+        else -> false
+    }
+    if (outputTooLow) return IJKPlaybackHealthIssue.SLOW_RENDERING
+
+    val decodeTooLow = when {
+        decodeFpsAvailableNow -> decodeFps < minimumFps
+        hasObservedDecodeFps && decodeFps.isFinite() -> decodeFps <= 0f
+        else -> false
+    }
+    if (decodeTooLow) return IJKPlaybackHealthIssue.DECODE_STALLED
+
+    val avSyncDrifted = avDifferenceSeconds.isFinite() &&
+        kotlin.math.abs(avDifferenceSeconds) >= PLAYBACK_HEALTH_MAX_AV_DRIFT_SECONDS
+    return IJKPlaybackHealthIssue.AV_SYNC_DRIFT.takeIf { avSyncDrifted }
+}
 
 internal fun isPlaybackHealthUnhealthy(
     outputFps: Float,
@@ -33,23 +73,15 @@ internal fun isPlaybackHealthUnhealthy(
     hasObservedDecodeFps: Boolean,
     avDifferenceSeconds: Float = Float.NaN,
 ): Boolean {
-    val positionStalled = progressDelta < PLAYBACK_HEALTH_MIN_PROGRESS_MS
-    val outputFpsAvailableNow = outputFps.isFinite() && outputFps > 0f
-    val decodeFpsAvailableNow = decodeFps.isFinite() && decodeFps > 0f
-    val outputTooLow = when {
-        outputFpsAvailableNow -> outputFps < minimumFps
-        hasObservedOutputFps && outputFps.isFinite() -> outputFps <= 0f
-        else -> false
-    }
-    val decodeTooLow = when {
-        decodeFpsAvailableNow -> decodeFps < minimumFps
-        hasObservedDecodeFps && decodeFps.isFinite() -> decodeFps <= 0f
-        else -> false
-    }
-
-    val avSyncDrifted = avDifferenceSeconds.isFinite() &&
-        kotlin.math.abs(avDifferenceSeconds) >= PLAYBACK_HEALTH_MAX_AV_DRIFT_SECONDS
-    return positionStalled || outputTooLow || decodeTooLow || avSyncDrifted
+    return playbackHealthIssue(
+        outputFps = outputFps,
+        decodeFps = decodeFps,
+        progressDelta = progressDelta,
+        minimumFps = minimumFps,
+        hasObservedOutputFps = hasObservedOutputFps,
+        hasObservedDecodeFps = hasObservedDecodeFps,
+        avDifferenceSeconds = avDifferenceSeconds,
+    ) != null
 }
 
 class IJKVideoPlayer(
@@ -198,6 +230,7 @@ class IJKVideoPlayer(
             delay(5_000L)
             var previousPosition = ijkPlayer.currentPosition
             var badSamples = 0
+            var previousIssue: IJKPlaybackHealthIssue? = null
             var hasObservedOutputFps = false
             var hasObservedDecodeFps = false
             while (!playbackHealthReported) {
@@ -212,7 +245,7 @@ class IJKVideoPlayer(
                 val position = ijkPlayer.currentPosition
                 val progressDelta = (position - previousPosition).coerceAtLeast(0L)
                 val minimumFps = if (currentRoute?.quality == ChannelQuality.UHD_4K) 16f else 8f
-                val unhealthy = isPlaybackHealthUnhealthy(
+                val issue = playbackHealthIssue(
                     outputFps = outputFps,
                     decodeFps = decodeFps,
                     progressDelta = progressDelta,
@@ -225,10 +258,13 @@ class IJKVideoPlayer(
                     (outputFps.isFinite() && outputFps > 0f)
                 hasObservedDecodeFps = hasObservedDecodeFps ||
                     (decodeFps.isFinite() && decodeFps > 0f)
-                badSamples = if (unhealthy) badSamples + 1 else 0
-                if (unhealthy) {
+                badSamples = if (issue != null && issue == previousIssue) badSamples + 1 else {
+                    if (issue == null) 0 else 1
+                }
+                previousIssue = issue
+                if (issue != null) {
                     log.w(
-                        "Playback health low: outputFps=$outputFps, " +
+                        "Playback health low (${issue.reasonCode}): outputFps=$outputFps, " +
                         "decodeFps=$decodeFps, progressDelta=$progressDelta, " +
                             "avDifference=$avDifference, " +
                             "outputTelemetry=$hasObservedOutputFps, " +
@@ -238,7 +274,7 @@ class IJKVideoPlayer(
                 previousPosition = position
                 if (badSamples >= PLAYBACK_HEALTH_BAD_SAMPLE_LIMIT) {
                     playbackHealthReported = true
-                    triggerPlaybackDegraded("ijk-playback-unhealthy")
+                    triggerPlaybackDegraded(issue?.reasonCode ?: "ijk-playback-stalled")
                 }
             }
         }

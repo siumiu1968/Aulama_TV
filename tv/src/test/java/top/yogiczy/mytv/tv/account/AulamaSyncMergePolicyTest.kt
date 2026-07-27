@@ -126,11 +126,11 @@ class AulamaSyncMergePolicyTest {
             AulamaPlaybackPolicy.prioritize(candidates, "direct").map { it.id },
         )
         assertEquals(
-            candidates,
+            listOf("hk_relay", "jp_relay", "direct"),
             AulamaPlaybackPolicy.prioritize(
                 candidates,
                 AulamaPlaybackPolicy.AUTO_PREFERENCE_ID,
-            ),
+            ).map { it.id },
         )
     }
 }

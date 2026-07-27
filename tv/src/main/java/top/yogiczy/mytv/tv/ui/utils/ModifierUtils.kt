@@ -61,29 +61,36 @@ fun Modifier.focusOnLaunchedSaveable(key: Any = Unit): Modifier = composed {
 fun Modifier.handleKeyEvents(
     onKeyTap: Map<Int, (() -> Unit)?> = emptyMap(),
     onKeyLongTap: Map<Int, (() -> Unit)?> = emptyMap(),
-): Modifier {
-    val keyDownMap = mutableMapOf<Int, Boolean>()
+): Modifier = composed {
+    val currentOnKeyTap by rememberUpdatedState(onKeyTap)
+    val currentOnKeyLongTap by rememberUpdatedState(onKeyLongTap)
+    val keyPressStates = remember { mutableMapOf<Int, KeyPressState>() }
 
-    return onPreviewKeyEvent {
+    onPreviewKeyEvent {
         val keyCode = it.nativeKeyEvent.keyCode
-        val hasHandler = onKeyTap[keyCode] != null || onKeyLongTap[keyCode] != null
+        val hasHandler = currentOnKeyTap[keyCode] != null || currentOnKeyLongTap[keyCode] != null
         if (!hasHandler) return@onPreviewKeyEvent false
 
         when (it.nativeKeyEvent.action) {
             KeyEvent.ACTION_DOWN -> {
-                if (it.nativeKeyEvent.repeatCount == 0) {
-                    keyDownMap[keyCode] = true
-                } else if (it.nativeKeyEvent.repeatCount == 1) {
-                    keyDownMap.remove(keyCode)
-                    onKeyLongTap[keyCode]?.invoke()
+                val downTime = it.nativeKeyEvent.downTime
+                val state = keyPressStates[keyCode]
+                    ?.takeIf { pressState -> pressState.downTime == downTime }
+                    ?: KeyPressState(downTime = downTime).also {
+                        keyPressStates[keyCode] = it
+                    }
+
+                if (it.nativeKeyEvent.repeatCount > 0 && !state.longHandled) {
+                    state.longHandled = true
+                    currentOnKeyLongTap[keyCode]?.invoke()
                 }
                 true
             }
 
             KeyEvent.ACTION_UP -> {
-                if (keyDownMap[keyCode] == true) {
-                    keyDownMap.remove(keyCode)
-                    onKeyTap[keyCode]?.invoke()
+                val state = keyPressStates.remove(keyCode)
+                if (state != null && !state.longHandled) {
+                    currentOnKeyTap[keyCode]?.invoke()
                 }
                 true
             }
@@ -92,6 +99,11 @@ fun Modifier.handleKeyEvents(
         }
     }
 }
+
+private data class KeyPressState(
+    val downTime: Long,
+    var longHandled: Boolean = false,
+)
 
 fun Modifier.handleDragGestures(
     onSwipeUp: () -> Unit = {},
@@ -175,59 +187,72 @@ fun Modifier.handleKeyEvents(
     onSettings: (() -> Unit)? = null,
     onNumber: ((Int) -> Unit)? = null,
 ) = handleKeyEvents(
-    onKeyTap = mapOf(
-        KeyEvent.KEYCODE_DPAD_LEFT to onLeft,
-        KeyEvent.KEYCODE_DPAD_RIGHT to onRight,
-        KeyEvent.KEYCODE_DPAD_UP to onUp,
-        KeyEvent.KEYCODE_CHANNEL_UP to onUp,
-        KeyEvent.KEYCODE_DPAD_DOWN to onDown,
-        KeyEvent.KEYCODE_CHANNEL_DOWN to onDown,
+    onKeyTap = buildMap {
+        putAll(
+            mapOf(
+                KeyEvent.KEYCODE_DPAD_LEFT to onLeft,
+                KeyEvent.KEYCODE_DPAD_RIGHT to onRight,
+                KeyEvent.KEYCODE_DPAD_UP to onUp,
+                KeyEvent.KEYCODE_CHANNEL_UP to onUp,
+                KeyEvent.KEYCODE_DPAD_DOWN to onDown,
+                KeyEvent.KEYCODE_CHANNEL_DOWN to onDown,
 
-        KeyEvent.KEYCODE_DPAD_CENTER to onSelect,
-        KeyEvent.KEYCODE_ENTER to onSelect,
-        KeyEvent.KEYCODE_NUMPAD_ENTER to onSelect,
+                KeyEvent.KEYCODE_DPAD_CENTER to onSelect,
+                KeyEvent.KEYCODE_ENTER to onSelect,
+                KeyEvent.KEYCODE_NUMPAD_ENTER to onSelect,
 
-        KeyEvent.KEYCODE_MENU to onSettings,
-        KeyEvent.KEYCODE_SETTINGS to onSettings,
-        KeyEvent.KEYCODE_HELP to onSettings,
-        KeyEvent.KEYCODE_H to onSettings,
+                KeyEvent.KEYCODE_MENU to onSettings,
+                KeyEvent.KEYCODE_SETTINGS to onSettings,
+                KeyEvent.KEYCODE_HELP to onSettings,
+                KeyEvent.KEYCODE_H to onSettings,
 
-        KeyEvent.KEYCODE_L to onLongSelect,
-        KeyEvent.KEYCODE_W to onLongUp,
-        KeyEvent.KEYCODE_S to onLongDown,
-        KeyEvent.KEYCODE_A to onLongLeft,
-        KeyEvent.KEYCODE_D to onLongRight,
+                KeyEvent.KEYCODE_L to onLongSelect,
+                KeyEvent.KEYCODE_W to onLongUp,
+                KeyEvent.KEYCODE_S to onLongDown,
+                KeyEvent.KEYCODE_A to onLongLeft,
+                KeyEvent.KEYCODE_D to onLongRight,
 
-        KeyEvent.KEYCODE_0 to onNumber?.let<(Int) -> Unit, () -> Unit> { { it(0) } },
-        KeyEvent.KEYCODE_1 to onNumber?.let<(Int) -> Unit, () -> Unit> { { it(1) } },
-        KeyEvent.KEYCODE_2 to onNumber?.let<(Int) -> Unit, () -> Unit> { { it(2) } },
-        KeyEvent.KEYCODE_3 to onNumber?.let<(Int) -> Unit, () -> Unit> { { it(3) } },
-        KeyEvent.KEYCODE_4 to onNumber?.let<(Int) -> Unit, () -> Unit> { { it(4) } },
-        KeyEvent.KEYCODE_5 to onNumber?.let<(Int) -> Unit, () -> Unit> { { it(5) } },
-        KeyEvent.KEYCODE_6 to onNumber?.let<(Int) -> Unit, () -> Unit> { { it(6) } },
-        KeyEvent.KEYCODE_7 to onNumber?.let<(Int) -> Unit, () -> Unit> { { it(7) } },
-        KeyEvent.KEYCODE_8 to onNumber?.let<(Int) -> Unit, () -> Unit> { { it(8) } },
-        KeyEvent.KEYCODE_9 to onNumber?.let<(Int) -> Unit, () -> Unit> { { it(9) } },
-    ).apply {
+                KeyEvent.KEYCODE_0 to onNumber?.let<(Int) -> Unit, () -> Unit> { { it(0) } },
+                KeyEvent.KEYCODE_1 to onNumber?.let<(Int) -> Unit, () -> Unit> { { it(1) } },
+                KeyEvent.KEYCODE_2 to onNumber?.let<(Int) -> Unit, () -> Unit> { { it(2) } },
+                KeyEvent.KEYCODE_3 to onNumber?.let<(Int) -> Unit, () -> Unit> { { it(3) } },
+                KeyEvent.KEYCODE_4 to onNumber?.let<(Int) -> Unit, () -> Unit> { { it(4) } },
+                KeyEvent.KEYCODE_5 to onNumber?.let<(Int) -> Unit, () -> Unit> { { it(5) } },
+                KeyEvent.KEYCODE_6 to onNumber?.let<(Int) -> Unit, () -> Unit> { { it(6) } },
+                KeyEvent.KEYCODE_7 to onNumber?.let<(Int) -> Unit, () -> Unit> { { it(7) } },
+                KeyEvent.KEYCODE_8 to onNumber?.let<(Int) -> Unit, () -> Unit> { { it(8) } },
+                KeyEvent.KEYCODE_9 to onNumber?.let<(Int) -> Unit, () -> Unit> { { it(9) } },
+            ),
+        )
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N_MR1) {
-            KeyEvent.KEYCODE_SYSTEM_NAVIGATION_LEFT to onLeft
-            KeyEvent.KEYCODE_SYSTEM_NAVIGATION_RIGHT to onRight
-            KeyEvent.KEYCODE_SYSTEM_NAVIGATION_UP to onUp
-            KeyEvent.KEYCODE_SYSTEM_NAVIGATION_DOWN to onDown
+            put(KeyEvent.KEYCODE_SYSTEM_NAVIGATION_LEFT, onLeft)
+            put(KeyEvent.KEYCODE_SYSTEM_NAVIGATION_RIGHT, onRight)
+            put(KeyEvent.KEYCODE_SYSTEM_NAVIGATION_UP, onUp)
+            put(KeyEvent.KEYCODE_SYSTEM_NAVIGATION_DOWN, onDown)
         }
     },
-    onKeyLongTap = mapOf(
-        KeyEvent.KEYCODE_DPAD_LEFT to onLongLeft,
-        KeyEvent.KEYCODE_DPAD_RIGHT to onLongRight,
-        KeyEvent.KEYCODE_DPAD_UP to onLongUp,
-        KeyEvent.KEYCODE_CHANNEL_UP to onLongUp,
-        KeyEvent.KEYCODE_DPAD_DOWN to onLongDown,
-        KeyEvent.KEYCODE_CHANNEL_DOWN to onLongDown,
+    onKeyLongTap = buildMap {
+        putAll(
+            mapOf(
+                KeyEvent.KEYCODE_DPAD_LEFT to onLongLeft,
+                KeyEvent.KEYCODE_DPAD_RIGHT to onLongRight,
+                KeyEvent.KEYCODE_DPAD_UP to onLongUp,
+                KeyEvent.KEYCODE_CHANNEL_UP to onLongUp,
+                KeyEvent.KEYCODE_DPAD_DOWN to onLongDown,
+                KeyEvent.KEYCODE_CHANNEL_DOWN to onLongDown,
 
-        KeyEvent.KEYCODE_ENTER to onLongSelect,
-        KeyEvent.KEYCODE_NUMPAD_ENTER to onLongSelect,
-        KeyEvent.KEYCODE_DPAD_CENTER to onLongSelect,
-    ),
+                KeyEvent.KEYCODE_ENTER to onLongSelect,
+                KeyEvent.KEYCODE_NUMPAD_ENTER to onLongSelect,
+                KeyEvent.KEYCODE_DPAD_CENTER to onLongSelect,
+            ),
+        )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N_MR1) {
+            put(KeyEvent.KEYCODE_SYSTEM_NAVIGATION_LEFT, onLongLeft)
+            put(KeyEvent.KEYCODE_SYSTEM_NAVIGATION_RIGHT, onLongRight)
+            put(KeyEvent.KEYCODE_SYSTEM_NAVIGATION_UP, onLongUp)
+            put(KeyEvent.KEYCODE_SYSTEM_NAVIGATION_DOWN, onLongDown)
+        }
+    },
 )
     .clickableNoIndication(
         onClick = onSelect,

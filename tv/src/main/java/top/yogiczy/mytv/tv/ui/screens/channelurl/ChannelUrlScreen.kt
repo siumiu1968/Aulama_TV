@@ -1,5 +1,6 @@
 package top.yogiczy.mytv.tv.ui.screens.channelurl
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -11,6 +12,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.MaterialTheme
@@ -44,6 +49,7 @@ fun ChannelUrlScreen(
 ) {
     val screenAutoCloseState = rememberScreenAutoCloseState(onTimeout = onClose)
     val channel = channelProvider()
+    val sourceEntryFocusRequester = remember(channel.name) { FocusRequester() }
     var priorityUrls by remember(channel.name) {
         mutableStateOf(IptvRoutePriorityStore.priorities(channel.name))
     }
@@ -52,30 +58,44 @@ fun ChannelUrlScreen(
         modifier = modifier.captureBackKey { onClose() },
         onDismissRequest = onClose,
         position = DrawerPosition.End,
-        header = { Text("多線路") },
     ) {
         val isSuperAdmin = isSuperAdminProvider()
         Column(
             modifier = Modifier
                 .width(420.dp)
-                .fillMaxHeight(),
+                .fillMaxHeight()
+                .background(
+                    color = MaterialTheme.colorScheme.surface,
+                    shape = MaterialTheme.shapes.large,
+                )
+                .padding(horizontal = 12.dp)
+                .onPreviewKeyEvent {
+                    if (it.type == KeyEventType.KeyDown) screenAutoCloseState.active()
+                    false
+                },
         ) {
+            Text(
+                text = "多線路",
+                modifier = Modifier.padding(horizontal = 4.dp, vertical = 12.dp),
+                style = MaterialTheme.typography.titleLarge,
+            )
             if (isSuperAdmin) {
                 Text(
                     text = "管理員中轉",
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
                     style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.primary,
                 )
                 PlaybackTransportItemList(
                     modifier = Modifier.fillMaxWidth(),
                     selectedIdProvider = transportPreferenceIdProvider,
+                    sourceEntryFocusRequester = sourceEntryFocusRequester,
                     onSelected = onTransportPreferenceSelected,
                     onUserAction = { screenAutoCloseState.active() },
                 )
                 Text(
                     text = "原始線路",
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp),
                     style = MaterialTheme.typography.titleSmall,
                 )
             }
@@ -86,6 +106,7 @@ fun ChannelUrlScreen(
                 urlListProvider = { channel.urlList.toPersistentList() },
                 currentUrlProvider = currentUrlProvider,
                 priorityUrlsProvider = { priorityUrls },
+                entryFocusRequester = sourceEntryFocusRequester,
                 focusSelectedOnLaunch = !isSuperAdmin,
                 onSelected = onUrlSelected,
                 onPriorityToggle = { url ->

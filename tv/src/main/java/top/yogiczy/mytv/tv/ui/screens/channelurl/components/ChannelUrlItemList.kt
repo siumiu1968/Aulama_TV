@@ -9,6 +9,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import kotlinx.collections.immutable.ImmutableList
@@ -25,6 +26,7 @@ fun ChannelUrlItemList(
     urlListProvider: () -> ImmutableList<String> = { persistentListOf() },
     currentUrlProvider: () -> String = { "" },
     priorityUrlsProvider: () -> List<String> = { emptyList() },
+    entryFocusRequester: FocusRequester? = null,
     focusSelectedOnLaunch: Boolean = true,
     onSelected: (String) -> Unit = {},
     onPriorityToggle: (String) -> Unit = {},
@@ -32,8 +34,9 @@ fun ChannelUrlItemList(
 ) {
     val urlList = urlListProvider()
     val priorityUrls = priorityUrlsProvider()
+    val currentUrlIndex = urlList.indexOf(currentUrlProvider()).takeIf { it >= 0 } ?: 0
 
-    val listState = rememberLazyListState(max(0, urlList.indexOf(currentUrlProvider()) - 2))
+    val listState = rememberLazyListState(max(0, currentUrlIndex - 2))
 
     LaunchedEffect(listState) {
         snapshotFlow { listState.isScrollInProgress }
@@ -44,8 +47,8 @@ fun ChannelUrlItemList(
     LazyColumn(
         modifier = modifier,
         state = listState,
-        contentPadding = PaddingValues(vertical = 4.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+        contentPadding = PaddingValues(vertical = 2.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         itemsIndexed(urlList) { index, url ->
             ChannelUrlItem(
@@ -54,6 +57,9 @@ fun ChannelUrlItemList(
                 isSelectedProvider = { url == currentUrlProvider() },
                 priorityRankProvider = {
                     priorityUrls.indexOf(url).takeIf { it >= 0 }?.plus(1)
+                },
+                externalRowFocusRequester = entryFocusRequester.takeIf {
+                    index == currentUrlIndex
                 },
                 focusSelectedOnLaunch = focusSelectedOnLaunch,
                 onSelected = { onSelected(url) },

@@ -35,6 +35,15 @@ import top.yogiczy.mytv.tv.ui.utils.IptvPlaybackMode
 import top.yogiczy.mytv.tv.ui.utils.IptvPlaybackHealthPolicy
 import top.yogiczy.mytv.tv.ui.utils.IptvPlaybackHealthWindow
 
+internal fun shouldTryPlaybackModeFallback(errorCodeName: String, errorCode: Int): Boolean {
+    val normalized = errorCodeName.uppercase()
+    return errorCode == -1010 || listOf(
+        "DECODER",
+        "DECODING",
+        "UNSUPPORTED",
+        "PARSING_CONTAINER",
+    ).any(normalized::contains)
+}
 
 @Stable
 class VideoPlayerState(
@@ -45,6 +54,7 @@ class VideoPlayerState(
     private var defaultDisplayModeProvider: () -> VideoPlayerDisplayMode = { VideoPlayerDisplayMode.ORIGINAL },
 ) {
     private var currentRoute: ChannelRoute? = null
+    private var pendingPrepareRoute: ChannelRoute? = null
     private var currentSurface: SurfaceView? = null
     private var currentTexture: TextureView? = null
     private var activePlayerType = when (instance) {
@@ -62,6 +72,7 @@ class VideoPlayerState(
     private var ratioHealthJob: Job? = null
     private var playbackHealthWindow: IptvPlaybackHealthWindow =
         IptvPlaybackHealthPolicy.start(0L)
+    private var currentFirstFrameTimeoutMs = IptvPlaybackHealthPolicy.firstFrameTimeoutMs
     private var degradedReported = false
     private var isAppForeground = false
     private val recentRebuffers = mutableListOf<Long>()
@@ -125,6 +136,7 @@ class VideoPlayerState(
         route: ChannelRoute,
         retrying: Boolean = false,
         preferredPlaybackMode: IptvPlaybackMode? = null,
+        firstFrameTimeoutMs: Long = IptvPlaybackHealthPolicy.firstFrameTimeoutMs,
     ) {
         if (!initialized) initialize()
         if (currentRoute?.url != route.url) {
@@ -132,20 +144,21 @@ class VideoPlayerState(
         }
         attemptedPlaybackModes.clear()
         playbackGeneration += 1
+        currentFirstFrameTimeoutMs = firstFrameTimeoutMs.coerceAtLeast(1_000L)
         resetPlaybackHealthWindow()
         recentRebuffers.clear()
         degradedReported = false
         currentRoute = route
-        requiresSurfaceView = route.quality == ChannelQuality.UHD_4K
+        val mode = selectPlaybackMode(route, preferredPlaybackMode)
+        requiresSurfaceView = route.quality == ChannelQuality.UHD_4K ||
+            mode == IptvPlaybackMode.MEDIA3
         if (requiresSurfaceView) currentTexture = null
         error = null
         retryMessage = if (retrying) "自動重試中" else null
         hasRenderedFirstFrame = false
         isBuffering = true
-        val mode = selectPlaybackMode(route, preferredPlaybackMode)
         attemptedPlaybackModes += mode
-        switchPlayerIfNeeded(mode)
-        instance.prepare(route)
+        prepareWithMode(route, mode)
     }
 
     fun play() {
@@ -176,6 +189,7 @@ class VideoPlayerState(
         isBuffering = false
         error = null
         retryMessage = null
+        pendingPrepareRoute = null
         instance.stop()
     }
 
@@ -194,6 +208,7 @@ class VideoPlayerState(
         currentSurface = surfaceView
         currentTexture = null
         instance.setVideoSurfaceView(surfaceView)
+        preparePendingRoute()
     }
 
     fun setVideoTextureView(textureView: TextureView) {
@@ -201,6 +216,7 @@ class VideoPlayerState(
         currentTexture = textureView
         currentSurface = null
         instance.setVideoTextureView(textureView)
+        preparePendingRoute()
     }
 
     private val onReadyListeners = mutableListOf<() -> Unit>()
@@ -229,9 +245,16 @@ class VideoPlayerState(
         onPlaybackDegradedListeners.add(listener)
     }
 
-    private fun reportPlaybackDegraded(reason: String) {
+    private fun reportPlaybackDegraded(
+        reason: String,
+        allowPlaybackModeFallback: Boolean = false,
+    ) {
         if (degradedReported) return
-        if (attemptedPlaybackModes.size == 1 && tryPlaybackModeFallback()) return
+        if (
+            allowPlaybackModeFallback &&
+            attemptedPlaybackModes.size == 1 &&
+            tryPlaybackModeFallback()
+        ) return
         degradedReported = true
         bufferingHealthJob?.cancel()
         firstFrameHealthJob?.cancel()
@@ -247,11 +270,12 @@ class VideoPlayerState(
         val generation = playbackGeneration
         playbackHealthWindow = IptvPlaybackHealthPolicy.start(System.currentTimeMillis())
         firstFrameHealthJob = coroutineScope.launch {
-            delay(IptvPlaybackHealthPolicy.firstFrameTimeoutMs)
+            delay(currentFirstFrameTimeoutMs)
             if (generation != playbackGeneration || hasRenderedFirstFrame) return@launch
             IptvPlaybackHealthPolicy.evaluate(
                 playbackHealthWindow,
                 System.currentTimeMillis(),
+                currentFirstFrameTimeoutMs,
             )?.let { reportPlaybackDegraded(IptvPlaybackHealthPolicy.reasonCode(it)) }
         }
     }
@@ -265,6 +289,7 @@ class VideoPlayerState(
                 IptvPlaybackHealthPolicy.evaluate(
                     playbackHealthWindow,
                     System.currentTimeMillis(),
+                    currentFirstFrameTimeoutMs,
                 )?.let { reportPlaybackDegraded(IptvPlaybackHealthPolicy.reasonCode(it)) }
                 delay(5_000L)
             }
@@ -311,8 +336,7 @@ class VideoPlayerState(
                 currentRoute?.url == route.url &&
                 playbackMode == previousMode
             ) {
-                switchPlayerIfNeeded(nextMode)
-                instance.prepare(route)
+                prepareWithMode(route, nextMode)
             }
         }
         return true
@@ -359,7 +383,28 @@ class VideoPlayerState(
         IptvPlaybackMode.MEDIA3 -> Media3VideoPlayer(context, coroutineScope)
     }
 
-    private fun switchPlayerIfNeeded(mode: IptvPlaybackMode) {
+    private fun prepareWithMode(route: ChannelRoute, mode: IptvPlaybackMode) {
+        requiresSurfaceView = route.quality == ChannelQuality.UHD_4K ||
+            mode == IptvPlaybackMode.MEDIA3
+        if (switchPlayerIfNeeded(mode)) {
+            pendingPrepareRoute = route
+        } else {
+            pendingPrepareRoute = null
+            instance.prepare(route)
+        }
+    }
+
+    private fun preparePendingRoute() {
+        val route = pendingPrepareRoute ?: return
+        if (currentRoute?.url != route.url) {
+            pendingPrepareRoute = null
+            return
+        }
+        pendingPrepareRoute = null
+        instance.prepare(route)
+    }
+
+    private fun switchPlayerIfNeeded(mode: IptvPlaybackMode): Boolean {
         val type = when (mode) {
             IptvPlaybackMode.IJK,
             IptvPlaybackMode.IJK_SOFTWARE -> Configs.VideoPlayerType.IJK
@@ -376,7 +421,7 @@ class VideoPlayerState(
                             activeLeTvVendorPlayer == useLeTvVendorPlayer
                         )
                 )
-        ) return
+        ) return false
 
         instance.release()
         currentSurface = null
@@ -388,6 +433,7 @@ class VideoPlayerState(
         activeLeTvVendorPlayer = useLeTvVendorPlayer
         instance.setPlaybackAllowed(isAppForeground)
         if (initialized) configureInstance()
+        return true
     }
 
     private fun configureInstance() {
@@ -413,8 +459,7 @@ class VideoPlayerState(
                         currentRoute?.url == route.url &&
                         activeLeTvVendorPlayer
                     ) {
-                        switchPlayerIfNeeded(IptvPlaybackMode.IJK)
-                        instance.prepare(route)
+                        prepareWithMode(route, IptvPlaybackMode.IJK)
                     }
                 }
                 return@playerError
@@ -438,14 +483,17 @@ class VideoPlayerState(
                         activePlayerType == Configs.VideoPlayerType.MEDIA3
                     ) {
                         attemptedPlaybackModes += IptvPlaybackMode.IJK
-                        switchPlayerIfNeeded(IptvPlaybackMode.IJK)
-                        instance.prepare(route)
+                        prepareWithMode(route, IptvPlaybackMode.IJK)
                     }
                 }
                 return@playerError
             }
 
-            if (ex != null && tryPlaybackModeFallback()) {
+            if (
+                ex != null &&
+                shouldTryPlaybackModeFallback(ex.errorCodeName, ex.errorCode) &&
+                tryPlaybackModeFallback()
+            ) {
                 return@playerError
             }
 
@@ -474,7 +522,11 @@ class VideoPlayerState(
                 buffering = it,
                 nowMs = now,
             )
-            IptvPlaybackHealthPolicy.evaluate(playbackHealthWindow, now)
+            IptvPlaybackHealthPolicy.evaluate(
+                playbackHealthWindow,
+                now,
+                currentFirstFrameTimeoutMs,
+            )
                 ?.let { reason ->
                     reportPlaybackDegraded(IptvPlaybackHealthPolicy.reasonCode(reason))
                 }
@@ -501,14 +553,8 @@ class VideoPlayerState(
         instance.onCurrentPositionChanged { currentPosition = it }
         instance.onMetadata { metadata = it }
         instance.onInterrupt { onInterruptListeners.forEach { it.invoke() } }
-        instance.onPlaybackDegraded {
-            val now = System.currentTimeMillis()
-            playbackHealthWindow = IptvPlaybackHealthPolicy.onExternalStall(
-                playbackHealthWindow,
-                now,
-            )
-            IptvPlaybackHealthPolicy.evaluate(playbackHealthWindow, now)
-                ?.let { reason -> reportPlaybackDegraded(IptvPlaybackHealthPolicy.reasonCode(reason)) }
+        instance.onPlaybackDegraded { reason ->
+            reportPlaybackDegraded(reason, allowPlaybackModeFallback = true)
         }
     }
 
@@ -539,6 +585,7 @@ class VideoPlayerState(
         bufferingHealthJob?.cancel()
         firstFrameHealthJob?.cancel()
         ratioHealthJob?.cancel()
+        pendingPrepareRoute = null
         instance.release()
     }
 }

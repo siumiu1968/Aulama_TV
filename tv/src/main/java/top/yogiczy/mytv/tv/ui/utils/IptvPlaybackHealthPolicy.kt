@@ -74,11 +74,12 @@ internal object IptvPlaybackHealthPolicy {
     fun evaluate(
         state: IptvPlaybackHealthWindow,
         nowMs: Long,
+        firstFrameDeadlineMs: Long = firstFrameTimeoutMs,
     ): IptvDegradationReason? {
         val firstFrameAt = state.firstFrameAtMs
         if (firstFrameAt == null) {
             return IptvDegradationReason.FirstFrameTimeout.takeIf {
-                nowMs - state.attemptStartedAtMs >= firstFrameTimeoutMs
+                nowMs - state.attemptStartedAtMs >= firstFrameDeadlineMs
             }
         }
         val stalls = state.stallTimestampsMs.count { nowMs - it <= stallWindowMs }

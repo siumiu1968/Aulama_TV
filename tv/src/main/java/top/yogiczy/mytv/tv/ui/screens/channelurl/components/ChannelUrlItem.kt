@@ -4,6 +4,7 @@ import android.view.KeyEvent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
@@ -49,6 +50,7 @@ fun ChannelUrlItem(
     urlIdxProvider: () -> Int = { 0 },
     isSelectedProvider: () -> Boolean = { false },
     priorityRankProvider: () -> Int? = { null },
+    externalRowFocusRequester: FocusRequester? = null,
     focusSelectedOnLaunch: Boolean = true,
     onSelected: () -> Unit = {},
     onPriorityToggle: () -> Unit = {},
@@ -57,7 +59,8 @@ fun ChannelUrlItem(
     val urlIdx = urlIdxProvider()
     val isSelected = isSelectedProvider()
     val priorityRank = priorityRankProvider()
-    val rowFocusRequester = remember(url) { FocusRequester() }
+    val fallbackRowFocusRequester = remember(url) { FocusRequester() }
+    val rowFocusRequester = externalRowFocusRequester ?: fallbackRowFocusRequester
     val priorityFocusRequester = remember(url) { FocusRequester() }
 
     val urlDelay = rememberUrlDelay(url)
@@ -74,10 +77,11 @@ fun ChannelUrlItem(
         onClick = onSelected,
         headlineContent = {
             Row(
+                modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("線路${urlIdx + 1}")
+                Text("線路${urlIdx + 1}", maxLines = 1)
 
                 if (ChannelUtil.isHybridWebViewUrl(url)) {
                     Tag("混合 · ${ChannelUtil.getHybridWebViewUrlProvider(url)}")
@@ -92,7 +96,12 @@ fun ChannelUrlItem(
             }
         },
         supportingContent = {
-            Text(url, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                text = url,
+                modifier = Modifier.fillMaxWidth(),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         },
         trailingContent = {
             Row(

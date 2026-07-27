@@ -104,7 +104,7 @@ class IJKPlaybackHealthTest {
     }
 
     @Test
-    fun `sustained lip sync drift is unhealthy`() {
+    fun `severe sustained lip sync drift is unhealthy`() {
         assertTrue(
             isPlaybackHealthUnhealthy(
                 outputFps = 25f,
@@ -113,7 +113,7 @@ class IJKPlaybackHealthTest {
                 minimumFps = 8f,
                 hasObservedOutputFps = true,
                 hasObservedDecodeFps = true,
-                avDifferenceSeconds = -0.18f,
+                avDifferenceSeconds = -0.85f,
             ),
         )
     }
@@ -129,6 +129,21 @@ class IJKPlaybackHealthTest {
                 hasObservedOutputFps = true,
                 hasObservedDecodeFps = true,
                 avDifferenceSeconds = -0.04f,
+            ),
+        )
+    }
+
+    @Test
+    fun `temporary clock correction does not discard a playing route`() {
+        assertFalse(
+            isPlaybackHealthUnhealthy(
+                outputFps = 25f,
+                decodeFps = 25f,
+                progressDelta = 3_000L,
+                minimumFps = 8f,
+                hasObservedOutputFps = true,
+                hasObservedDecodeFps = true,
+                avDifferenceSeconds = 0.44f,
             ),
         )
     }

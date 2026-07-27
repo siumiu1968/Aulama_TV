@@ -18,6 +18,17 @@ class IptvPlaybackHealthPolicyTest {
     }
 
     @Test
+    fun `relay can use a longer first frame deadline`() {
+        val state = IptvPlaybackHealthPolicy.start(1_000L)
+
+        assertNull(IptvPlaybackHealthPolicy.evaluate(state, 20_000L, 30_000L))
+        assertEquals(
+            IptvDegradationReason.FirstFrameTimeout,
+            IptvPlaybackHealthPolicy.evaluate(state, 31_000L, 30_000L),
+        )
+    }
+
+    @Test
     fun `three stalls inside forty five seconds trigger degradation`() {
         var state = IptvPlaybackHealthPolicy.onFirstFrame(
             IptvPlaybackHealthPolicy.start(0L),

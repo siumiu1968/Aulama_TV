@@ -38,6 +38,8 @@ import top.yogiczy.mytv.tv.ui.screens.settings.SettingsViewModel
 import top.yogiczy.mytv.tv.ui.screens.videoplayer.VideoPlayerState
 import top.yogiczy.mytv.tv.ui.screens.videoplayer.rememberVideoPlayerState
 import top.yogiczy.mytv.tv.ui.utils.IptvDisplayCapabilities
+import top.yogiczy.mytv.tv.ui.utils.IptvPlaybackHealthPolicy
+import top.yogiczy.mytv.tv.ui.utils.IptvPlaybackMode
 import top.yogiczy.mytv.tv.ui.utils.IptvRouteHealthStore
 import top.yogiczy.mytv.tv.ui.utils.IptvRoutePriorityStore
 import top.yogiczy.mytv.tv.ui.utils.mergeRouteAttemptOrder
@@ -57,6 +59,10 @@ private const val STABLE_WATCH_SAMPLE_MS = 60_000L
 private const val STABLE_WATCH_FINAL_CREDIT_MS = 45_000L
 private const val QUICK_ROUTE_EXIT_MS = 25_000L
 private const val RELAY_RESOLUTION_TIMEOUT_MS = 4_000L
+private const val RELAY_FIRST_FRAME_TIMEOUT_MS = 30_000L
+private const val SAME_CANDIDATE_RELOAD_COOLDOWN_MS = 120_000L
+private const val SAME_CANDIDATE_RELOAD_DELAY_MS = 260L
+private val SUPER_ADMIN_TRANSPORT_IDS = listOf("hk_relay", "jp_relay", "direct")
 
 @Stable
 class MainContentState(
@@ -89,7 +95,8 @@ class MainContentState(
     private var routeWatchCreditedMs = 0L
     private var routeSuccessRecorded = false
     private var stableWatchLearningJob: Job? = null
-    private var lastFailureHandledUrl: String? = null
+    private var lastFailureHandledKey: String? = null
+    private val lastCandidateReloadAt = mutableMapOf<String, Long>()
     private val supportsHdrOutput by lazy {
         IptvDisplayCapabilities.supportsHdrOutput(context)
     }
@@ -183,18 +190,21 @@ class MainContentState(
 
         videoPlayerState.onFirstFrame {
             val route = currentRouteOrNull() ?: return@onFirstFrame
+            val healthKey = currentPlaybackHealthKey()
             if (!routeSuccessRecorded) {
                 val now = System.currentTimeMillis()
                 routeSuccessRecorded = true
                 routeFirstFrameAt = now
                 IptvRouteHealthStore.markSuccess(
-                    route.url,
+                    healthKey,
                     now - routeStartedAt,
                     playbackMode = videoPlayerState.playbackMode,
                 )
-                startStableWatchLearning(route.url)
+                startStableWatchLearning(healthKey)
             }
-            settingsViewModel.iptvPlayableHostList += getUrlHost(route.url)
+            if (currentPlaybackTransport() == AulamaPlaybackTransport.DIRECT) {
+                settingsViewModel.iptvPlayableHostList += getUrlHost(route.url)
+            }
             coroutineScope.launch {
                 val name = _currentChannel.name
                 val urlIdx = _currentChannelUrlIdx
@@ -209,16 +219,21 @@ class MainContentState(
 
         videoPlayerState.onPlaybackDegraded { reason ->
             val failedRoute = currentRouteOrNull() ?: return@onPlaybackDegraded
-            val failedAttemptUrl = currentPlaybackAttemptUrl()
-            if (lastFailureHandledUrl == failedAttemptUrl) return@onPlaybackDegraded
-            lastFailureHandledUrl = failedAttemptUrl
+            val failedHealthKey = currentPlaybackHealthKey()
+            if (lastFailureHandledKey == failedHealthKey) return@onPlaybackDegraded
+            lastFailureHandledKey = failedHealthKey
             finishCurrentWatchSession()
+            if (scheduleSameCandidateReload(failedHealthKey)) {
+                Snackbar.show("播放有波動，原線重試中")
+                return@onPlaybackDegraded
+            }
+
+            IptvRouteHealthStore.markDegraded(failedHealthKey, reason)
             if (currentPlaybackTransport() == AulamaPlaybackTransport.DIRECT) {
-                IptvRouteHealthStore.markDegraded(failedRoute.url, reason)
                 settingsViewModel.iptvPlayableHostList -= getUrlHost(failedRoute.url)
             }
 
-            if (playNextRoute(forceSwitch = reason == "first-frame-timeout")) {
+            if (playNextRoute(forceSwitch = true)) {
                 val nextRoute = currentRouteOrNull()
                 val target = nextRoute?.quality?.label ?: "後備"
                 Snackbar.show("畫面播放唔順，已自動切換${target}線路")
@@ -232,12 +247,14 @@ class MainContentState(
 
         videoPlayerState.onError { _ ->
             val failedRoute = currentRouteOrNull() ?: return@onError false
-            val failedAttemptUrl = currentPlaybackAttemptUrl()
-            if (lastFailureHandledUrl == failedAttemptUrl) return@onError false
-            lastFailureHandledUrl = failedAttemptUrl
+            val failedHealthKey = currentPlaybackHealthKey()
+            if (lastFailureHandledKey == failedHealthKey) return@onError false
+            lastFailureHandledKey = failedHealthKey
             finishCurrentWatchSession()
+            if (scheduleSameCandidateReload(failedHealthKey)) return@onError true
+
+            IptvRouteHealthStore.markFailure(failedHealthKey)
             if (currentPlaybackTransport() == AulamaPlaybackTransport.DIRECT) {
-                IptvRouteHealthStore.markFailure(failedRoute.url)
                 settingsViewModel.iptvPlayableHostList -= getUrlHost(failedRoute.url)
             }
 
@@ -251,11 +268,16 @@ class MainContentState(
         }
 
         videoPlayerState.onInterrupt {
-            currentRouteOrNull()?.let {
+            currentRouteOrNull()?.let { route ->
+                val failedHealthKey = currentPlaybackHealthKey()
+                if (lastFailureHandledKey == failedHealthKey) return@onInterrupt
+                lastFailureHandledKey = failedHealthKey
                 finishCurrentWatchSession()
+                if (scheduleSameCandidateReload(failedHealthKey)) return@onInterrupt
+
+                IptvRouteHealthStore.markFailure(failedHealthKey)
                 if (currentPlaybackTransport() == AulamaPlaybackTransport.DIRECT) {
-                    IptvRouteHealthStore.markFailure(it.url)
-                    settingsViewModel.iptvPlayableHostList -= getUrlHost(it.url)
+                    settingsViewModel.iptvPlayableHostList -= getUrlHost(route.url)
                 }
             }
             if (!playNextRoute(forceSwitch = true)) prepareCurrentRoute(retrying = true)
@@ -341,22 +363,62 @@ class MainContentState(
         transportAttempts.getOrNull(transportAttemptCursor)?.transport
             ?: AulamaPlaybackTransport.DIRECT
 
-    private fun currentPlaybackAttemptUrl(): String =
-        transportAttempts.getOrNull(transportAttemptCursor)?.url
-            ?: currentRouteOrNull()?.url.orEmpty()
+    private fun currentPlaybackCandidate(): AulamaPlaybackCandidate? =
+        transportAttempts.getOrNull(transportAttemptCursor)
 
-    private fun startStableWatchLearning(url: String) {
+    private fun currentPlaybackHealthKey(): String = IptvRouteHealthStore.candidateKey(
+        routeUrl = currentRouteOrNull()?.url.orEmpty(),
+        transportId = currentPlaybackCandidate()?.id.orEmpty(),
+    )
+
+    private fun scheduleSameCandidateReload(healthKey: String): Boolean {
+        val now = System.currentTimeMillis()
+        lastCandidateReloadAt.entries.removeAll {
+            now - it.value >= SAME_CANDIDATE_RELOAD_COOLDOWN_MS
+        }
+        if (lastCandidateReloadAt.containsKey(healthKey)) return false
+        lastCandidateReloadAt[healthKey] = now
+
+        val channelName = _currentChannel.name
+        val routeUrl = currentRouteOrNull()?.url ?: return false
+        val attemptCursor = transportAttemptCursor
+        videoPlayerState.showRetryNotice("播放有波動，原線重試中")
+        coroutineScope.launch {
+            delay(SAME_CANDIDATE_RELOAD_DELAY_MS)
+            val baseRoute = currentRouteOrNull() ?: return@launch
+            if (
+                _currentChannel.name != channelName ||
+                baseRoute.url != routeUrl ||
+                transportAttemptCursor != attemptCursor ||
+                currentPlaybackHealthKey() != healthKey
+            ) return@launch
+
+            lastFailureHandledKey = null
+            prepareTransportAttempt(
+                baseRoute = baseRoute,
+                directRoute = withPlaybackProgramme(baseRoute),
+                retrying = true,
+            )
+        }
+        return true
+    }
+
+    private fun startStableWatchLearning(healthKey: String) {
         stableWatchLearningJob?.cancel()
         stableWatchLearningJob = coroutineScope.launch {
-            while (currentRouteOrNull()?.url == url) {
+            while (currentPlaybackHealthKey() == healthKey) {
                 delay(STABLE_WATCH_SAMPLE_MS)
                 if (
-                    currentRouteOrNull()?.url == url &&
+                    currentPlaybackHealthKey() == healthKey &&
                     videoPlayerState.hasRenderedFirstFrame &&
                     videoPlayerState.isPlaying &&
                     !videoPlayerState.isBuffering
                 ) {
-                    IptvRouteHealthStore.markStableWatch(url, STABLE_WATCH_SAMPLE_MS)
+                    IptvRouteHealthStore.markStableWatch(
+                        healthKey,
+                        STABLE_WATCH_SAMPLE_MS,
+                        playbackMode = videoPlayerState.playbackMode,
+                    )
                     routeWatchCreditedMs += STABLE_WATCH_SAMPLE_MS
                 }
             }
@@ -368,13 +430,18 @@ class MainContentState(
         stableWatchLearningJob = null
         val route = currentRouteOrNull()
         if (route != null && routeFirstFrameAt > 0L) {
+            val healthKey = currentPlaybackHealthKey()
             val watchedMs = (System.currentTimeMillis() - routeFirstFrameAt).coerceAtLeast(0L)
             val uncreditedMs = (watchedMs - routeWatchCreditedMs).coerceAtLeast(0L)
             if (uncreditedMs >= STABLE_WATCH_FINAL_CREDIT_MS) {
-                IptvRouteHealthStore.markStableWatch(route.url, uncreditedMs)
+                IptvRouteHealthStore.markStableWatch(
+                    healthKey,
+                    uncreditedMs,
+                    playbackMode = videoPlayerState.playbackMode,
+                )
             }
             if (quickExit && watchedMs in 1 until QUICK_ROUTE_EXIT_MS) {
-                IptvRouteHealthStore.markQuickExit(route.url)
+                IptvRouteHealthStore.markQuickExit(healthKey)
             }
         }
         routeFirstFrameAt = 0L
@@ -391,6 +458,11 @@ class MainContentState(
         val ranked = IptvRouteHealthStore.rankedIndices(
             routes = channel.routes,
             supports4k = supportsHdrOutput,
+            transportIds = if (AulamaAccount.manager.isSuperAdmin()) {
+                SUPER_ADMIN_TRANSPORT_IDS
+            } else {
+                listOf("direct")
+            },
         )
         val automaticOrder = orderRoutesForDisplay(
             routes = channel.routes,
@@ -446,7 +518,7 @@ class MainContentState(
 
         _isTempChannelScreenVisible = true
         routeStartedAt = System.currentTimeMillis()
-        lastFailureHandledUrl = null
+        lastFailureHandledKey = null
         val priorityRank = IptvRoutePriorityStore.priorities(_currentChannel.name)
             .indexOf(baseRoute.url)
             .takeIf { it >= 0 }
@@ -490,13 +562,36 @@ class MainContentState(
             if (generation != transportResolutionGeneration || currentRouteOrNull()?.url != baseRoute.url) {
                 return@launch
             }
-            transportAttempts = AulamaPlaybackPolicy.prioritize(
-                candidates = resolved,
-                preferenceId = _playbackTransportPreferenceId,
-            )
+            transportAttempts = rankTransportAttempts(baseRoute, resolved)
             transportAttemptCursor = 0
             prepareTransportAttempt(baseRoute, directRoute, retrying)
         }
+    }
+
+    private fun rankTransportAttempts(
+        baseRoute: ChannelRoute,
+        candidates: List<AulamaPlaybackCandidate>,
+    ): List<AulamaPlaybackCandidate> {
+        val prioritized = AulamaPlaybackPolicy.prioritize(
+            candidates = candidates,
+            preferenceId = _playbackTransportPreferenceId,
+        )
+        val rankedIds = IptvRouteHealthStore.rankedTransportIds(
+            routeUrl = baseRoute.url,
+            orderedTransportIds = prioritized.map { it.id },
+            quality = baseRoute.quality,
+            supports4k = supportsHdrOutput,
+        )
+        val learnedOrder = rankedIds.flatMap { id -> prioritized.filter { it.id == id } } +
+            prioritized.filter { it.id !in rankedIds }
+        if (_playbackTransportPreferenceId == AulamaPlaybackPolicy.AUTO_PREFERENCE_ID) {
+            return learnedOrder
+        }
+
+        val preferred = prioritized.firstOrNull {
+            it.id == _playbackTransportPreferenceId
+        } ?: return learnedOrder
+        return listOf(preferred) + learnedOrder.filterNot { it.url == preferred.url }
     }
 
     private fun prepareTransportAttempt(
@@ -517,11 +612,22 @@ class MainContentState(
             AulamaPlaybackAuthorization.clearForUrl(directRoute.url)
             directRoute
         }
+        lastFailureHandledKey = null
         routeStartedAt = System.currentTimeMillis()
         videoPlayerState.prepare(
             route,
             retrying = retrying,
-            preferredPlaybackMode = IptvRouteHealthStore.preferredPlaybackMode(baseRoute.url),
+            preferredPlaybackMode = if (attempt.transport == AulamaPlaybackTransport.RELAY) {
+                // Media3's shared OkHttp factory keeps the bearer header on every HLS segment.
+                IptvPlaybackMode.MEDIA3
+            } else {
+                IptvRouteHealthStore.preferredPlaybackMode(baseRoute.url, attempt.id)
+            },
+            firstFrameTimeoutMs = if (attempt.transport == AulamaPlaybackTransport.RELAY) {
+                RELAY_FIRST_FRAME_TIMEOUT_MS
+            } else {
+                IptvPlaybackHealthPolicy.firstFrameTimeoutMs
+            },
         )
     }
 

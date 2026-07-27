@@ -91,6 +91,75 @@ class IptvRouteHealthStoreTest {
     }
 
     @Test
+    fun `transport health is isolated for the same route`() {
+        val routeUrl = "https://example.test/live.m3u8"
+        val health = mapOf(
+            IptvRouteHealthStore.candidateKey(routeUrl, "hk_relay") to IptvRouteHealth(
+                failureCount = 2,
+                consecutiveFailures = 2,
+                lastFailureAt = now - 1_000L,
+            ),
+            IptvRouteHealthStore.candidateKey(routeUrl, "jp_relay") to
+                successfulHealth(successCount = 8, startupMs = 1_100L),
+        )
+
+        assertEquals(
+            listOf("jp_relay", "direct", "hk_relay"),
+            IptvRouteHealthStore.rankedTransportIds(
+                routeUrl = routeUrl,
+                orderedTransportIds = listOf("hk_relay", "jp_relay", "direct"),
+                health = health,
+                quality = ChannelQuality.FULL_HD,
+                supports4k = true,
+                now = now,
+            ),
+        )
+    }
+
+    @Test
+    fun `unknown transports retain server order`() {
+        assertEquals(
+            listOf("hk_relay", "jp_relay", "direct"),
+            IptvRouteHealthStore.rankedTransportIds(
+                routeUrl = "https://example.test/live.m3u8",
+                orderedTransportIds = listOf("hk_relay", "jp_relay", "direct"),
+                health = emptyMap(),
+                quality = ChannelQuality.FULL_HD,
+                supports4k = true,
+                now = now,
+            ),
+        )
+    }
+
+    @Test
+    fun `route ranking uses its best available transport`() {
+        val fastViaJapan = "https://example.test/a.m3u8"
+        val failedEverywhere = "https://example.test/b.m3u8"
+        val routes = listOf(
+            route(failedEverywhere, ChannelQuality.FULL_HD, 0),
+            route(fastViaJapan, ChannelQuality.FULL_HD, 1),
+        )
+        val health = mapOf(
+            IptvRouteHealthStore.candidateKey(failedEverywhere, "hk_relay") to
+                IptvRouteHealth(consecutiveFailures = 1, lastFailureAt = now - 1_000L),
+            IptvRouteHealthStore.candidateKey(failedEverywhere, "jp_relay") to
+                IptvRouteHealth(consecutiveFailures = 1, lastFailureAt = now - 1_000L),
+            IptvRouteHealthStore.candidateKey(fastViaJapan, "jp_relay") to
+                successfulHealth(successCount = 5, startupMs = 900L),
+        )
+
+        assertEquals(
+            listOf(1, 0),
+            IptvRouteHealthStore.rankedIndices(
+                routes = routes,
+                health = health,
+                now = now,
+                transportIds = listOf("hk_relay", "jp_relay"),
+            ),
+        )
+    }
+
+    @Test
     fun `long stable viewing raises route score within the same quality`() {
         val routes = listOf(
             route("brief", ChannelQuality.FULL_HD, 0),

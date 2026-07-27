@@ -58,7 +58,13 @@ class Media3VideoPlayer(
     private val log = Logger.create(javaClass.simpleName)
 
     private val toneMappingCodecAdapterFactory = object : MediaCodecAdapter.Factory {
-        private val delegate = DefaultMediaCodecAdapterFactory(context).forceDisableAsynchronous()
+        private val delegate = DefaultMediaCodecAdapterFactory(context).let { factory ->
+            if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.M) {
+                factory.forceDisableAsynchronous()
+            } else {
+                factory
+            }
+        }
 
         override fun createAdapter(
             configuration: MediaCodecAdapter.Configuration,

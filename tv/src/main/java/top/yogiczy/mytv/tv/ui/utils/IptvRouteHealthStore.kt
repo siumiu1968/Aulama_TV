@@ -40,7 +40,7 @@ enum class IptvPlaybackMode {
 object IptvRouteHealthStore {
     private const val key = "IPTV_ROUTE_HEALTH_V2"
     private const val playbackProfileKey = "IPTV_PLAYBACK_PROFILE"
-    private const val playbackProfile = "IJK_AC3_HEALTH_V2"
+    private const val playbackProfile = "IJK_STABLE_MODE_V3"
     private const val initialCooldownMs = 2 * 60 * 1000L
     private const val maxCooldownMs = 30 * 60 * 1000L
     private const val decayHalfLifeMs = 7 * 24 * 60 * 60 * 1000L
@@ -56,25 +56,84 @@ object IptvRouteHealthStore {
         routes: List<ChannelRoute>,
         now: Long = System.currentTimeMillis(),
         supports4k: Boolean = true,
-    ): List<Int> = rankedIndices(routes, read(), now, supports4k)
+        transportIds: List<String> = listOf(DIRECT_TRANSPORT_ID),
+    ): List<Int> = rankedIndices(routes, read(), now, supports4k, transportIds)
 
     internal fun rankedIndices(
         routes: List<ChannelRoute>,
         health: Map<String, IptvRouteHealth>,
         now: Long,
         supports4k: Boolean = true,
+        transportIds: List<String> = listOf(DIRECT_TRANSPORT_ID),
     ): List<Int> {
+        val availableTransportIds = transportIds.distinct().ifEmpty {
+            listOf(DIRECT_TRANSPORT_ID)
+        }
         return routes.indices.sortedWith(
-            compareBy<Int> { index -> if (isCoolingDown(health[routes[index].url], now)) 1 else 0 }
+            compareBy<Int> { index ->
+                val records = availableTransportIds.mapNotNull { transportId ->
+                    candidateHealth(health, routes[index].url, transportId)
+                }
+                if (records.isNotEmpty() && records.all { isCoolingDown(it, now) }) 1 else 0
+            }
                 .thenByDescending { index ->
-                    performanceScore(
-                        health = health[routes[index].url],
-                        now = now,
-                        quality = routes[index].quality,
-                        supports4k = supports4k,
-                    ) - autoSelectionPenalty(routes[index].url)
+                    availableTransportIds.maxOf { transportId ->
+                        performanceScore(
+                            health = candidateHealth(
+                                health,
+                                routes[index].url,
+                                transportId,
+                            ),
+                            now = now,
+                            quality = routes[index].quality,
+                            supports4k = supports4k,
+                        )
+                    } - autoSelectionPenalty(routes[index].url)
                 }
                 .thenBy { index -> routes[index].sourceOrder }
+        )
+    }
+
+    fun candidateKey(routeUrl: String, transportId: String): String =
+        "${transportId.ifBlank { DIRECT_TRANSPORT_ID }}::$routeUrl"
+
+    @Synchronized
+    fun rankedTransportIds(
+        routeUrl: String,
+        orderedTransportIds: List<String>,
+        quality: top.yogiczy.mytv.core.data.entities.channel.ChannelQuality,
+        supports4k: Boolean,
+        now: Long = System.currentTimeMillis(),
+    ): List<String> = rankedTransportIds(
+        routeUrl = routeUrl,
+        orderedTransportIds = orderedTransportIds,
+        health = read(),
+        quality = quality,
+        supports4k = supports4k,
+        now = now,
+    )
+
+    internal fun rankedTransportIds(
+        routeUrl: String,
+        orderedTransportIds: List<String>,
+        health: Map<String, IptvRouteHealth>,
+        quality: top.yogiczy.mytv.core.data.entities.channel.ChannelQuality,
+        supports4k: Boolean,
+        now: Long,
+    ): List<String> {
+        val sourceOrder = orderedTransportIds.distinct()
+        val rank = sourceOrder.withIndex().associate { (index, id) -> id to index }
+        return sourceOrder.sortedWith(
+            compareBy<String> { transportId ->
+                if (isCoolingDown(candidateHealth(health, routeUrl, transportId), now)) 1 else 0
+            }.thenByDescending { transportId ->
+                performanceScore(
+                    health = candidateHealth(health, routeUrl, transportId),
+                    now = now,
+                    quality = quality,
+                    supports4k = supports4k,
+                )
+            }.thenBy { transportId -> rank.getValue(transportId) }
         )
     }
 
@@ -82,6 +141,13 @@ object IptvRouteHealthStore {
         val host = runCatching { URI(url).host }.getOrNull()
         return if (host in autoDeprioritizedHosts) 28.0 else 0.0
     }
+
+    private fun candidateHealth(
+        health: Map<String, IptvRouteHealth>,
+        routeUrl: String,
+        transportId: String,
+    ): IptvRouteHealth? = health[candidateKey(routeUrl, transportId)]
+        ?: health[routeUrl].takeIf { transportId == DIRECT_TRANSPORT_ID }
 
     internal fun performanceScore(
         health: IptvRouteHealth?,
@@ -143,7 +209,19 @@ object IptvRouteHealthStore {
         ?.let { value -> runCatching { IptvPlaybackMode.valueOf(value) }.getOrNull() }
 
     @Synchronized
+    fun preferredPlaybackMode(
+        routeUrl: String,
+        transportId: String,
+    ): IptvPlaybackMode? = candidateHealth(read(), routeUrl, transportId)
+        ?.preferredPlaybackMode
+        ?.let { value -> runCatching { IptvPlaybackMode.valueOf(value) }.getOrNull() }
+
+    @Synchronized
     internal fun healthFor(url: String): IptvRouteHealth? = read()[url]
+
+    @Synchronized
+    internal fun healthFor(routeUrl: String, transportId: String): IptvRouteHealth? =
+        candidateHealth(read(), routeUrl, transportId)
 
     @Synchronized
     fun markSuccess(
@@ -218,6 +296,7 @@ object IptvRouteHealthStore {
     fun markStableWatch(
         url: String,
         watchedMs: Long,
+        playbackMode: IptvPlaybackMode? = null,
         now: Long = System.currentTimeMillis(),
     ) {
         if (watchedMs <= 0L) return
@@ -230,6 +309,7 @@ object IptvRouteHealthStore {
             quickExitCount = (previous.quickExitCount - recoveredQuickExits).coerceAtLeast(0),
             lastSuccessAt = maxOf(previous.lastSuccessAt, now),
             lastWatchAt = now,
+            preferredPlaybackMode = playbackMode?.name ?: previous.preferredPlaybackMode,
             lastUpdatedAt = now,
         )
         write(trim(health))
@@ -256,6 +336,8 @@ object IptvRouteHealthStore {
 
     private fun ewma(previous: Double?, sample: Double): Double =
         previous?.let { it * 0.72 + sample * 0.28 } ?: sample
+
+    private const val DIRECT_TRANSPORT_ID = "direct"
 
     private fun read(): MutableMap<String, IptvRouteHealth> = try {
         val json = SP.getString(key, "{}")
