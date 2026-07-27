@@ -25,6 +25,7 @@ fun ChannelUrlItemList(
     urlListProvider: () -> ImmutableList<String> = { persistentListOf() },
     currentUrlProvider: () -> String = { "" },
     priorityUrlsProvider: () -> List<String> = { emptyList() },
+    focusSelectedOnLaunch: Boolean = true,
     onSelected: (String) -> Unit = {},
     onPriorityToggle: (String) -> Unit = {},
     onUserAction: () -> Unit = {},
@@ -54,6 +55,7 @@ fun ChannelUrlItemList(
                 priorityRankProvider = {
                     priorityUrls.indexOf(url).takeIf { it >= 0 }?.plus(1)
                 },
+                focusSelectedOnLaunch = focusSelectedOnLaunch,
                 onSelected = { onSelected(url) },
                 onPriorityToggle = {
                     onUserAction()

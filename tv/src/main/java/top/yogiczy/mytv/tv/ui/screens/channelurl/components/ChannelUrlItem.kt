@@ -49,6 +49,7 @@ fun ChannelUrlItem(
     urlIdxProvider: () -> Int = { 0 },
     isSelectedProvider: () -> Boolean = { false },
     priorityRankProvider: () -> Int? = { null },
+    focusSelectedOnLaunch: Boolean = true,
     onSelected: () -> Unit = {},
     onPriorityToggle: () -> Unit = {},
 ) {
@@ -61,8 +62,8 @@ fun ChannelUrlItem(
 
     val urlDelay = rememberUrlDelay(url)
 
-    LaunchedEffect(isSelected) {
-        if (isSelected) rowFocusRequester.saveRequestFocus()
+    LaunchedEffect(isSelected, focusSelectedOnLaunch) {
+        if (isSelected && focusSelectedOnLaunch) rowFocusRequester.saveRequestFocus()
     }
 
     ListItem(

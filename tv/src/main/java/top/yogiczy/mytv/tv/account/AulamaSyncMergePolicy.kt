@@ -90,6 +90,8 @@ internal data class AulamaPlaybackCandidate(
 )
 
 internal object AulamaPlaybackPolicy {
+    const val AUTO_PREFERENCE_ID = "auto"
+
     fun candidates(
         directUrl: String,
         isSuperAdmin: Boolean,
@@ -105,7 +107,7 @@ internal object AulamaPlaybackPolicy {
                         label = if (candidate.transport == AulamaPlaybackTransport.DIRECT) {
                             "直接連線"
                         } else {
-                            "${candidate.region}中轉"
+                            relayLabel(candidate)
                         },
                         authorization = candidate.authorization,
                     )
@@ -121,4 +123,30 @@ internal object AulamaPlaybackPolicy {
             )
         )
     }.distinctBy { it.url }
+
+    fun prioritize(
+        candidates: List<AulamaPlaybackCandidate>,
+        preferenceId: String,
+    ): List<AulamaPlaybackCandidate> {
+        if (preferenceId == AUTO_PREFERENCE_ID) return candidates
+        val preferred = candidates.firstOrNull { it.id == preferenceId } ?: return candidates
+        return listOf(preferred) + candidates.filterNot { it.url == preferred.url }
+    }
+
+    fun preferenceLabel(preferenceId: String): String = when (preferenceId) {
+        "hk_relay" -> "香港中轉優先"
+        "jp_relay" -> "日本中轉優先"
+        "direct" -> "直接連線優先"
+        else -> "自動：香港 → 日本 → 直接"
+    }
+
+    private fun relayLabel(candidate: AulamaPlanCandidate): String = when {
+        candidate.id.equals("hk_relay", ignoreCase = true) ||
+            candidate.region.equals("hk", ignoreCase = true) -> "香港中轉"
+
+        candidate.id.equals("jp_relay", ignoreCase = true) ||
+            candidate.region.equals("jp", ignoreCase = true) -> "日本中轉"
+
+        else -> "${candidate.region}中轉"
+    }
 }

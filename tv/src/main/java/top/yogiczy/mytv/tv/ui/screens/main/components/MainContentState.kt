@@ -80,6 +80,10 @@ class MainContentState(
     private var transportAttempts = emptyList<AulamaPlaybackCandidate>()
     private var transportAttemptCursor = 0
     private var transportResolutionGeneration = 0L
+    private var _playbackTransportPreferenceId by mutableStateOf(
+        AulamaPlaybackPolicy.AUTO_PREFERENCE_ID
+    )
+    val playbackTransportPreferenceId get() = _playbackTransportPreferenceId
     private var routeStartedAt = 0L
     private var routeFirstFrameAt = 0L
     private var routeWatchCreditedMs = 0L
@@ -486,7 +490,10 @@ class MainContentState(
             if (generation != transportResolutionGeneration || currentRouteOrNull()?.url != baseRoute.url) {
                 return@launch
             }
-            transportAttempts = resolved
+            transportAttempts = AulamaPlaybackPolicy.prioritize(
+                candidates = resolved,
+                preferenceId = _playbackTransportPreferenceId,
+            )
             transportAttemptCursor = 0
             prepareTransportAttempt(baseRoute, directRoute, retrying)
         }
@@ -619,6 +626,21 @@ class MainContentState(
     fun refreshCurrentChannel() {
         finishCurrentWatchSession()
         prepareCurrentRoute()
+    }
+
+    fun changePlaybackTransportPreference(preferenceId: String) {
+        if (!AulamaAccount.manager.isSuperAdmin()) return
+        val allowed = setOf(
+            AulamaPlaybackPolicy.AUTO_PREFERENCE_ID,
+            "hk_relay",
+            "jp_relay",
+            "direct",
+        )
+        _playbackTransportPreferenceId = preferenceId.takeIf { it in allowed }
+            ?: AulamaPlaybackPolicy.AUTO_PREFERENCE_ID
+        Snackbar.show(AulamaPlaybackPolicy.preferenceLabel(_playbackTransportPreferenceId))
+        finishCurrentWatchSession()
+        prepareCurrentRoute(retrying = true)
     }
 
     fun favoriteChannelOrNot(channel: Channel) {

@@ -1,5 +1,9 @@
 package top.yogiczy.mytv.tv.ui.screens.channelurl
 
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -9,13 +13,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import kotlinx.collections.immutable.toPersistentList
 import top.yogiczy.mytv.core.data.entities.channel.Channel
 import top.yogiczy.mytv.tv.ui.material.Drawer
 import top.yogiczy.mytv.tv.ui.material.DrawerPosition
 import top.yogiczy.mytv.tv.ui.material.Snackbar
+import top.yogiczy.mytv.tv.account.AulamaPlaybackPolicy
 import top.yogiczy.mytv.tv.ui.screens.channelurl.components.ChannelUrlItemList
+import top.yogiczy.mytv.tv.ui.screens.channelurl.components.PlaybackTransportItemList
 import top.yogiczy.mytv.tv.ui.screens.components.rememberScreenAutoCloseState
 import top.yogiczy.mytv.tv.ui.theme.MyTVTheme
 import top.yogiczy.mytv.tv.ui.tooling.PreviewWithLayoutGrids
@@ -27,6 +34,11 @@ fun ChannelUrlScreen(
     modifier: Modifier = Modifier,
     channelProvider: () -> Channel = { Channel() },
     currentUrlProvider: () -> String = { "" },
+    isSuperAdminProvider: () -> Boolean = { false },
+    transportPreferenceIdProvider: () -> String = {
+        AulamaPlaybackPolicy.AUTO_PREFERENCE_ID
+    },
+    onTransportPreferenceSelected: (String) -> Unit = {},
     onUrlSelected: (String) -> Unit = {},
     onClose: () -> Unit = {},
 ) {
@@ -42,22 +54,51 @@ fun ChannelUrlScreen(
         position = DrawerPosition.End,
         header = { Text("多線路") },
     ) {
-        ChannelUrlItemList(
-            modifier = Modifier.width(360.dp),
-            urlListProvider = { channel.urlList.toPersistentList() },
-            currentUrlProvider = currentUrlProvider,
-            priorityUrlsProvider = { priorityUrls },
-            onSelected = onUrlSelected,
-            onPriorityToggle = { url ->
-                priorityUrls = IptvRoutePriorityStore.toggle(channel.name, url)
-                val rank = priorityUrls.indexOf(url).takeIf { it >= 0 }?.plus(1)
-                Snackbar.show(
-                    rank?.let { "已設為優先 $it：線路${channel.urlList.indexOf(url) + 1}" }
-                        ?: "已取消優先：線路${channel.urlList.indexOf(url) + 1}"
+        val isSuperAdmin = isSuperAdminProvider()
+        Column(
+            modifier = Modifier
+                .width(420.dp)
+                .fillMaxHeight(),
+        ) {
+            if (isSuperAdmin) {
+                Text(
+                    text = "管理員中轉",
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.primary,
                 )
-            },
-            onUserAction = { screenAutoCloseState.active() },
-        )
+                PlaybackTransportItemList(
+                    modifier = Modifier.fillMaxWidth(),
+                    selectedIdProvider = transportPreferenceIdProvider,
+                    onSelected = onTransportPreferenceSelected,
+                    onUserAction = { screenAutoCloseState.active() },
+                )
+                Text(
+                    text = "原始線路",
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    style = MaterialTheme.typography.titleSmall,
+                )
+            }
+            ChannelUrlItemList(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                urlListProvider = { channel.urlList.toPersistentList() },
+                currentUrlProvider = currentUrlProvider,
+                priorityUrlsProvider = { priorityUrls },
+                focusSelectedOnLaunch = !isSuperAdmin,
+                onSelected = onUrlSelected,
+                onPriorityToggle = { url ->
+                    priorityUrls = IptvRoutePriorityStore.toggle(channel.name, url)
+                    val rank = priorityUrls.indexOf(url).takeIf { it >= 0 }?.plus(1)
+                    Snackbar.show(
+                        rank?.let { "已設為優先 $it：線路${channel.urlList.indexOf(url) + 1}" }
+                            ?: "已取消優先：線路${channel.urlList.indexOf(url) + 1}"
+                    )
+                },
+                onUserAction = { screenAutoCloseState.active() },
+            )
+        }
     }
 }
 

@@ -18,8 +18,8 @@ android {
         applicationId = "top.yogiczy.mytv.tv.tc"
         minSdk = libs.versions.minSdk.get().toInt()
         targetSdk = libs.versions.targetSdk.get().toInt()
-        versionCode = 36
-        versionName = "2.6.11-family"
+        versionCode = 37
+        versionName = "2.6.12-family"
         vectorDrawables {
             useSupportLibrary = true
         }

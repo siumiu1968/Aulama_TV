@@ -27,6 +27,7 @@ import top.yogiczy.mytv.core.data.entities.epg.EpgProgrammeReserveList
 import top.yogiczy.mytv.core.data.repositories.epg.EpgRepository
 import top.yogiczy.mytv.core.data.repositories.iptv.IptvRepository
 import top.yogiczy.mytv.core.data.utils.ChannelUtil
+import top.yogiczy.mytv.tv.account.AulamaAccount
 import top.yogiczy.mytv.tv.ui.material.PopupContent
 import top.yogiczy.mytv.tv.ui.material.Snackbar
 import top.yogiczy.mytv.tv.ui.material.Visible
@@ -271,6 +272,14 @@ fun MainContent(
         ChannelUrlScreen(
             channelProvider = { mainContentState.currentChannel },
             currentUrlProvider = { mainContentState.currentChannel.urlList[mainContentState.currentChannelUrlIdx] },
+            isSuperAdminProvider = { AulamaAccount.manager.isSuperAdmin() },
+            transportPreferenceIdProvider = {
+                mainContentState.playbackTransportPreferenceId
+            },
+            onTransportPreferenceSelected = {
+                mainContentState.isChannelUrlScreenVisible = false
+                mainContentState.changePlaybackTransportPreference(it)
+            },
             onUrlSelected = {
                 mainContentState.isChannelUrlScreenVisible = false
                 mainContentState.changeCurrentChannel(

@@ -91,5 +91,46 @@ class AulamaSyncMergePolicyTest {
             admin.map { it.transport },
         )
         assertEquals(listOf(AulamaPlaybackTransport.DIRECT), regular.map { it.transport })
+        assertEquals(listOf("香港中轉", "日本中轉", "直接連線"), admin.map { it.label })
+    }
+
+    @Test
+    fun `manual transport preference moves selected relay first and keeps fallbacks`() {
+        val candidates = listOf(
+            AulamaPlaybackCandidate(
+                id = "hk_relay",
+                transport = AulamaPlaybackTransport.RELAY,
+                url = "https://hk.example/live",
+                label = "香港中轉",
+            ),
+            AulamaPlaybackCandidate(
+                id = "jp_relay",
+                transport = AulamaPlaybackTransport.RELAY,
+                url = "https://jp.example/live",
+                label = "日本中轉",
+            ),
+            AulamaPlaybackCandidate(
+                id = "direct",
+                transport = AulamaPlaybackTransport.DIRECT,
+                url = "https://origin.example/live",
+                label = "直接連線",
+            ),
+        )
+
+        assertEquals(
+            listOf("jp_relay", "hk_relay", "direct"),
+            AulamaPlaybackPolicy.prioritize(candidates, "jp_relay").map { it.id },
+        )
+        assertEquals(
+            listOf("direct", "hk_relay", "jp_relay"),
+            AulamaPlaybackPolicy.prioritize(candidates, "direct").map { it.id },
+        )
+        assertEquals(
+            candidates,
+            AulamaPlaybackPolicy.prioritize(
+                candidates,
+                AulamaPlaybackPolicy.AUTO_PREFERENCE_ID,
+            ),
+        )
     }
 }
