@@ -1,5 +1,10 @@
 # 更新日誌
 
+## [2.6.11-family] - 2026-07-27
+### 修復
+- 正式版更新會從 GitHub 發行清單只選取 Android TV APK，避免誤讀手機版而出現 `For input string: Android`
+- 異常版本字串會安全略過，檢查更新不再因版本解析而中斷
+
 ## [2.6.10-family] - 2026-07-27
 ### 修復
 - 修正部分 Android TV 無法直連 Cloudflare 或先取得不可達 IPv6 時，Aulama ID 配對會錯誤顯示連接唔到服務

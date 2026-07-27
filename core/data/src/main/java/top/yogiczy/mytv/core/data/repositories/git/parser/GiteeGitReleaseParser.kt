@@ -14,7 +14,7 @@ class GiteeGitReleaseParser : GitReleaseParser {
         return url.contains("gitee.com")
     }
 
-    override suspend fun parse(data: String): GitRelease {
+    override suspend fun parse(data: String, includePrerelease: Boolean): GitRelease {
         val json = Json.parseToJsonElement(data).jsonObject
 
         return GitRelease(

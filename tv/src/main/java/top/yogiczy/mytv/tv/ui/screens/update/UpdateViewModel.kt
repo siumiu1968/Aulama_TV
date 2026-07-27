@@ -52,7 +52,10 @@ class UpdateViewModel : ViewModel() {
 
             _isChecking = true
             _checkError = null
-            _latestRelease = GitRepository().latestRelease(releaseUrl)
+            _latestRelease = GitRepository().latestRelease(
+                url = releaseUrl,
+                includePrerelease = channel == "beta",
+            )
             lastCheckedChannel = channel
             log.d("線上版本: ${_latestRelease.version}")
             _isUpdateAvailable = _latestRelease.version.compareVersion(currentVersion) > 0

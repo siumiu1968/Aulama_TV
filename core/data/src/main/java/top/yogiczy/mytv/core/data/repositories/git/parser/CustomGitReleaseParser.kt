@@ -15,7 +15,7 @@ class CustomGitReleaseParser : GitReleaseParser {
         return url.contains("raw.githubusercontent.com")
     }
 
-    override suspend fun parse(data: String): GitRelease {
+    override suspend fun parse(data: String, includePrerelease: Boolean): GitRelease {
         val json = Json.parseToJsonElement(data).jsonObject
 
         return GitRelease(

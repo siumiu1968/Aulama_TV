@@ -19,11 +19,14 @@ fun String.isIPv6(): Boolean {
 }
 
 fun String.compareVersion(version2: String): Int {
-    fun parseVersion(version: String): Pair<List<Int>, String?> {
-        val mainParts = version.split("-", limit = 2)
-        val versionNumbers = mainParts[0].split(".").map { it.toInt() }
-        val preReleaseLabel = mainParts.getOrNull(1)
-        return versionNumbers to preReleaseLabel
+    fun parseVersion(version: String): Pair<List<Int>, String?>? {
+        val match = Regex(
+            pattern = "^v?(\\d+(?:\\.\\d+)*)(?:-([0-9A-Za-z][0-9A-Za-z.-]*))?$",
+        ).matchEntire(version.trim()) ?: return null
+        val versionNumbers = match.groupValues[1].split(".").map { part ->
+            part.toIntOrNull() ?: return null
+        }
+        return versionNumbers to match.groupValues.getOrNull(2)?.ifBlank { null }
     }
 
     fun comparePreRelease(label1: String?, label2: String?): Int {
@@ -34,8 +37,8 @@ fun String.compareVersion(version2: String): Int {
         return label1.compareTo(label2)
     }
 
-    val (v1, preRelease1) = parseVersion(this)
-    val (v2, preRelease2) = parseVersion(version2)
+    val (v1, preRelease1) = parseVersion(this) ?: return 0
+    val (v2, preRelease2) = parseVersion(version2) ?: return 0
     val maxLength = maxOf(v1.size, v2.size)
 
     for (i in 0 until maxLength) {

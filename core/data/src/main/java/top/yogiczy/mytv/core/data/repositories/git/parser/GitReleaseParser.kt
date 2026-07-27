@@ -14,7 +14,7 @@ interface GitReleaseParser {
     /**
      * 解析數據
      */
-    suspend fun parse(data: String): GitRelease
+    suspend fun parse(data: String, includePrerelease: Boolean = false): GitRelease
 
     companion object {
         val instances = listOf(

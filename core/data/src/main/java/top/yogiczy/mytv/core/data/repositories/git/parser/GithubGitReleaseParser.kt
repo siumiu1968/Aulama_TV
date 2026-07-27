@@ -13,19 +13,25 @@ import top.yogiczy.mytv.core.data.entities.git.GitRelease
  * github發行版解析
  */
 class GithubGitReleaseParser : GitReleaseParser {
+    private val tvVersionPattern = Regex(
+        pattern = "^v?(\\d+(?:\\.\\d+){1,3}(?:-[0-9A-Za-z][0-9A-Za-z.-]*)?)$",
+    )
+
     override fun isSupport(url: String): Boolean {
         return url.contains("github.com")
     }
 
-    override suspend fun parse(data: String): GitRelease {
+    override suspend fun parse(data: String, includePrerelease: Boolean): GitRelease {
         val root = Json.parseToJsonElement(data)
         val release = when (root) {
-            is JsonObject -> root
+            is JsonObject -> root.takeIf {
+                isEligibleRelease(it, includePrerelease)
+            }
+                ?: error("找不到可用的 Android TV 發行版")
             is JsonArray -> root
                 .map { it.jsonObject }
                 .firstOrNull {
-                    it["draft"]?.jsonPrimitive?.booleanOrNull != true &&
-                        findTvApk(it) != null
+                    isEligibleRelease(it, includePrerelease)
                 }
                 ?: error("找不到可用的 Android TV 發行版")
 
@@ -34,9 +40,11 @@ class GithubGitReleaseParser : GitReleaseParser {
 
         val asset = findTvApk(release) ?: error("發行版未附帶 Android TV APK")
         val tagName = release.getValue("tag_name").jsonPrimitive.content
+        val version = tvVersionPattern.matchEntire(tagName)?.groupValues?.get(1)
+            ?: error("Android TV 發行版版本格式不正確")
 
         return GitRelease(
-            version = tagName.removePrefix("v"),
+            version = version,
             downloadUrl = asset.getValue("browser_download_url").jsonPrimitive.content,
             description = release["body"]?.jsonPrimitive?.content.orEmpty()
                 .ifBlank { "此版本包含穩定性與介面改善。" },
@@ -46,13 +54,26 @@ class GithubGitReleaseParser : GitReleaseParser {
         )
     }
 
+    private fun isEligibleRelease(
+        release: JsonObject,
+        includePrerelease: Boolean,
+    ): Boolean {
+        val tagName = release["tag_name"]?.jsonPrimitive?.content.orEmpty()
+        return release["draft"]?.jsonPrimitive?.booleanOrNull != true &&
+            (includePrerelease || release["prerelease"]?.jsonPrimitive?.booleanOrNull != true) &&
+            tvVersionPattern.matches(tagName) &&
+            findTvApk(release) != null
+    }
+
     private fun findTvApk(release: JsonObject): JsonObject? {
         val assets = release["assets"]?.jsonArray.orEmpty().map { it.jsonObject }
         return assets.firstOrNull {
             val name = it["name"]?.jsonPrimitive?.content.orEmpty().lowercase()
-            name.endsWith(".apk") && ("tv" in name || "all-sdk" in name)
+            name.endsWith(".apk") &&
+                ("android-tv" in name || "mytv-tv" in name)
         } ?: assets.firstOrNull {
-            it["name"]?.jsonPrimitive?.content.orEmpty().endsWith(".apk", ignoreCase = true)
+            val name = it["name"]?.jsonPrimitive?.content.orEmpty().lowercase()
+            name.endsWith(".apk") && "mobile" !in name
         }
     }
 }

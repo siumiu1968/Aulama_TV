@@ -10,7 +10,7 @@ class DefaultGitReleaseParser : GitReleaseParser {
         return true
     }
 
-    override suspend fun parse(data: String): GitRelease {
+    override suspend fun parse(data: String, includePrerelease: Boolean): GitRelease {
         return GitRelease(
             version = "0.0.0",
             downloadUrl = "",

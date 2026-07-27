@@ -103,8 +103,8 @@ object Constants {
      * Git最新版本信息
      */
     val GIT_RELEASE_LATEST_URL = mapOf(
-        "stable" to "https://api.github.com/repos/siumiu1968/mytv-tv-origpatch/releases/latest",
-        "beta" to "https://api.github.com/repos/siumiu1968/mytv-tv-origpatch/releases?per_page=20",
+        "stable" to "https://api.github.com/repos/siumiu1968/mytv-tv-origpatch/releases?per_page=30",
+        "beta" to "https://api.github.com/repos/siumiu1968/mytv-tv-origpatch/releases?per_page=30",
     )
 
     /**

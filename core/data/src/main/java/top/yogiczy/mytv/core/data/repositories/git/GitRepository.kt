@@ -17,7 +17,10 @@ class GitRepository : Loggable() {
     /**
      * 獲取最新發行版
      */
-    suspend fun latestRelease(url: String): GitRelease {
+    suspend fun latestRelease(
+        url: String,
+        includePrerelease: Boolean = false,
+    ): GitRelease {
         log.d("獲取最新發行版: $url")
 
         val client = OkHttpClient()
@@ -30,7 +33,10 @@ class GitRepository : Loggable() {
 
             val parser = GitReleaseParser.instances.first { it.isSupport(url) }
             return withContext(Dispatchers.IO) {
-                parser.parse(response.body!!.string())
+                parser.parse(
+                    data = response.body!!.string(),
+                    includePrerelease = includePrerelease,
+                )
             }
         } catch (ex: Exception) {
             log.e("獲取最新發行版失敗", ex)
