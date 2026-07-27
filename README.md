@@ -1,128 +1,86 @@
-<div align="center">
-    <h1>我的電視</h1>
-<div align="center">
+<p align="center">
+  <img src="./tv/src/main/res/drawable/aulama_tv_logo.png" width="360" alt="Aulama TV" />
+</p>
 
+<h1 align="center">Aulama TV</h1>
 
-![GitHub Repo stars](https://img.shields.io/github/stars/minyoad/mytv-android)
-![GitHub all releases](https://img.shields.io/github/downloads/minyoad/mytv-android/total)
-[![Android Sdk Require](https://img.shields.io/badge/Android-5.0%2B-informational?logo=android)](https://apilevels.com/#:~:text=Jetpack%20Compose%20requires%20a%20minSdk%20of%2021%20or%20higher)
-[![GitHub](https://img.shields.io/github/license/minyoad/mytv-android)](https://github.com/minyoad/mytv-android)
+<p align="center">
+  為 Android TV、Google TV 及 Android 手機而設嘅 Aulama IPTV 播放器。
+</p>
 
-</div>
-    <p>使用Android原生開發的電視直播軟件</p>
-    <p>本分支為香港電視頻道取向的繁體中文版本，預設使用香港台精選 M3U 直播源，保留原版 UI 與操作方式。</p>
+<p align="center">
+  <a href="https://github.com/siumiu1968/Aulama_TV/releases/tag/v2.6.14-family"><img src="https://img.shields.io/github/v/release/siumiu1968/Aulama_TV?display_name=tag&label=Android%20TV&color=2383e2" alt="Android TV release" /></a>
+  <a href="https://github.com/siumiu1968/Aulama_TV/releases"><img src="https://img.shields.io/github/downloads/siumiu1968/Aulama_TV/total?label=downloads" alt="Downloads" /></a>
+  <a href="https://apilevels.com/"><img src="https://img.shields.io/badge/Android-5.0%2B-3ddc84?logo=android" alt="Android 5.0+" /></a>
+  <a href="./LICENSE"><img src="https://img.shields.io/github/license/siumiu1968/Aulama_TV" alt="MIT License" /></a>
+</p>
 
-<img src="./screenshots/Screenshot_classic_channels.png" width="96%"/>
-<br/>
-<img src="./screenshots/Screenshot_temp_panel.png" width="48%"/>
-<img src="./screenshots/Screenshot_settings.png" width="48%"/>
-</div>
+> 目前正式版本：Android TV `2.6.14-family`、Android 手機 `1.1.3`。
 
-## 使用
+## 新版介面
 
-### 操作方式
+### 頻道與節目指南
 
-> 遙控器操作方式與主流電視直播軟件類似；
+<img src="./screenshots/aulama-tv-channel-guide.png" width="100%" alt="Aulama TV 頻道及節目指南" />
 
-- 頻道切換：使用上下方向鍵，或者數字鍵切換頻道；屏幕上下滑動；
-- 頻道選擇：OK鍵；單擊屏幕；
-- 設置頁面：按下菜單、幫助鍵，長按OK鍵；雙擊、長按屏幕；
+頻道清單、目前／下一節節目、播放資訊及節目指南會保持同一個遙控器操作流程；節目資料按香港時間顯示。
 
-### 觸摸鍵位對應
+### 智能播放線路
 
-- 方向鍵：屏幕上下左右滑動
-- OK鍵：點擊屏幕
-- 長按OK鍵：長按屏幕
-- 菜單、幫助鍵：雙擊屏幕
+<img src="./screenshots/aulama-tv-smart-routes.png" width="100%" alt="Aulama TV 智能播放線路面板" />
 
-### 自定義設置
-
-- 訪問以下網址：`http://<設備IP>:10481`
-- 打開應用設置界面，移到最後一項
-- 支持自定義直播源、自定義節目單、緩存時間等等
-
-### 自定義直播源
-
-- 設置入口：自定義設置網址
-- 格式支持：m3u格式、tvbox格式
-
-### 多直播源
-
-- 設置入口：打開應用設置界面，選中`自定義直播源`項，點擊後將彈出歷史直播源列表
-- 歷史直播源列表：短按可切換當前直播源（需重啓），長按將清除歷史記錄；該功能類似於`多倉`，主要用於簡化直播源切換流程
-- 須知：
-    1. 當直播源數據獲取成功時，會將該直播源保存到歷史直播源列表中
-    2. 當直播源數據獲取失敗時，會將該直播源移出歷史直播源列表
-
-### 多線路
-
-- 功能描述：同一頻道擁有多個播放地址，相關標識位於頻道名稱後面
-- 切換線路：左右方向鍵；屏幕左右滑動
-- 自動切換：按 M3U 內主線至後備次序播放；當前線路失敗後自動切換下一條
-- 頻道更新：Aulama 預設三區清單會喺每次冷啟動檢查更新，毋須重新安裝 APK
-
-### 自定義節目單
-
-- 設置入口：自定義設置網址
-- 格式支持：.xml、.xml.gz格式
-
-### 多節目單
-
-- 設置入口：打開應用設置界面，選中`自定義節目單`項，點擊後將彈出歷史節目單列表
-- 具體功能請參照`多直播源`
-
-### 當天節目單
-
-- 功能入口：打開應用選台界面，選中某一頻道，按下菜單、幫助鍵、雙擊屏幕，將打開當天節目單
-- 須知：由於該應用不支持回放功能，所以更早的節目單沒必要展示
-
-### 頻道收藏
-
-- 功能入口：打開應用選台界面，選中某一頻道，長按OK鍵、長按屏幕，將收藏/取消收藏該頻道
-- 切換顯示收藏列表：首先移動到頻道列表頂部，然後再次按下方向鍵上，將切換顯示收藏列表；手機長按頻道信息切換
-
-## 下載
-
-可以通過右側release進行下載或拉取代碼到本地進行編譯
-
-## 説明
-
-- 僅支持Android5及以上
-- 部分直播源要求網絡環境必須支持IPV6
-- 只在自家電視上測過，其他電視穩定性未知
+用遙控器即可切換自動、香港、日本或直接連線模式，亦可為個別線路設定手動優先次序。
 
 ## 功能
 
-- [x] 換台反轉
-- [x] 數字選台
-- [x] 節目單
-- [x] 自動更新
-- [x] 多直播源
-- [x] 多線路
-- [x] 自定義直播源
-- [x] 多節目單
-- [x] 自定義節目單
-- [x] 頻道收藏
-- [x] 應用自定義設置
-- [x] TV端適配
-- [ ] 性能優化
+- **遙控器優先介面**：適配 Android TV、Google TV 及 D-pad；清晰顯示焦點、目前狀態及可操作項目。
+- **節目單**：顯示目前、下一節與當日節目；支援 XMLTV／XMLTV.GZ 自訂來源。
+- **智能多線路**：按畫質、成功率、啟動速度、卡頓與近期穩定觀看表現排列候選線路；播放異常會先自動重試，再平順切換後備。
+- **手動優先**：可為同一頻道排定多條優先線路；自動模式會在首選失敗後繼續後備。
+- **Aulama ID**：訪客可直接使用；登入後可用 QR Code／配對碼同步收藏、自訂 M3U 及線路優先次序。
+- **播放相容性**：按裝置能力選擇合適的解碼及色彩路徑，舊 Android TV 不支援 HDR 時會避開不合適線路。
+- **個人化**：支援收藏、數字選台、換台反轉、自訂 M3U／TVBox 清單與自訂節目單。
 
-## 發佈
-- 發佈流程：
-    1. 確保項目代碼已更新到最新版本
-    2. 執行`release.sh`腳本，按照提示輸入新版本號
-    3. 腳本將自動更新`tv/build.gradle.kts`文件中的版本號，並提交到Git倉庫
-    4. 推送標籤到遠程倉庫，觸發GitHub Actions編譯APK
-    5. 等待編譯完成，下載最新APK，會自動更新到GitHub 的release上，並自動觸發update json    
+## 下載
 
-## 聲明
+| 平台 | 正式版本 | 下載 |
+| --- | --- | --- |
+| Android TV／Google TV | `2.6.14-family` | [下載 APK](https://github.com/siumiu1968/Aulama_TV/releases/tag/v2.6.14-family) |
+| Android 手機 | `1.1.3` | [下載 APK](https://github.com/siumiu1968/Aulama_TV/releases/tag/android-v1.1.3) |
+| 網頁版 | 最新版 | [開啟 Aulama IPTV](https://aulama.org/iptv/) |
 
-此項目（我的電視）是個人為了興趣而開發, 僅用於學習和測試。 所用API皆從官方網站收集, 不提供任何破解內容。
+## 基本操作
+
+- `上／下`：切換頻道或移動焦點。
+- `OK`：確認目前選項。
+- `Menu／選單鍵`：開啟播放控制中心，再進入節目指南、切換線路、畫面比例或設定。
+- `左／右`：在支援嘅播放畫面快速調整線路；所有設定均可由遙控器完整操作。
+- `數字鍵`：直接選台。
+
+## 自訂內容
+
+App 支援匯入自己擁有或獲授權嘅 M3U／TVBox 直播源，以及 XMLTV／XMLTV.GZ 節目單。Aulama ID 為自選功能，未登入仍可播放及管理本機內容。
+
+## 開發
+
+需求：Android SDK、JDK 17、Android 5.0（API 21）或以上裝置。
+
+```bash
+./gradlew :tv:assembleRelease
+./gradlew :mobile:assembleRelease
+```
+
+主要模組：
+
+- `tv/`：Android TV／Google TV 體驗。
+- `mobile/`：Android 手機體驗。
+- `core/`：播放、清單、節目單及同步共用邏輯。
+
+## 使用聲明
+
+本項目只提供播放器與清單管理功能，不擁有、託管或保證任何第三方直播內容。請只匯入你有權使用嘅來源，並遵守所在地法律及內容供應商條款。
 
 ## 致謝
 
 - [my-tv](https://github.com/lizongying/my-tv)
-- [參考設計稿](https://github.com/lizongying/my-tv/issues/594)
-- [IPV6直播源](https://github.com/zhumeng11/IPTV)
-- [live](https://github.com/fanmingming/live)
-- 等等
+- [fanmingming/live](https://github.com/fanmingming/live)
