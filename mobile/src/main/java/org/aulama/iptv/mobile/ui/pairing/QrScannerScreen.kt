@@ -12,6 +12,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -19,38 +20,37 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.CameraAlt
 import androidx.compose.material.icons.rounded.Keyboard
 import androidx.compose.material.icons.rounded.QrCodeScanner
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -60,6 +60,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import org.aulama.iptv.mobile.ui.components.AuroraScaffold
+import org.aulama.iptv.mobile.ui.components.AuroraTopBar
+import org.aulama.iptv.mobile.ui.components.GlassPane
 import java.util.concurrent.Executors
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -78,10 +81,10 @@ fun QrScannerScreen(
                 PackageManager.PERMISSION_GRANTED
         )
     }
-    var permissionRequested by remember { mutableStateOf(false) }
+    var permissionRequested by rememberSaveable { mutableStateOf(false) }
     var cameraError by remember { mutableStateOf<String?>(null) }
-    var manualCode by remember { mutableStateOf("") }
-    var manualError by remember { mutableStateOf<String?>(null) }
+    var manualCode by rememberSaveable { mutableStateOf("") }
+    var manualError by rememberSaveable { mutableStateOf<String?>(null) }
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
@@ -99,34 +102,13 @@ fun QrScannerScreen(
         }
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("掃描電視配對碼") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "返回")
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                ),
-            )
-        },
-    ) { contentPadding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(contentPadding)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 18.dp, vertical = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
+    val cameraSection: @Composable () -> Unit = {
+        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(
                     text = "對準電視畫面上嘅 QR code",
                     style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
+                    fontWeight = FontWeight.Black,
                 )
                 Text(
                     text = "只接受 https://aulama.org/iptv/pair/ 配對連結；掃描後仍要由你確認。",
@@ -138,7 +120,7 @@ fun QrScannerScreen(
             when {
                 !hasCamera -> ScannerUnavailable(
                     title = "呢部裝置冇可用相機",
-                    detail = "請用下面嘅欄位手動輸入電視配對碼。",
+                    detail = "請用右邊或下面嘅欄位手動輸入電視配對碼。",
                 )
 
                 cameraGranted -> {
@@ -146,7 +128,8 @@ fun QrScannerScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .aspectRatio(4f / 3f)
-                            .background(Color.Black, RoundedCornerShape(16.dp)),
+                            .clip(RoundedCornerShape(24.dp))
+                            .background(Color.Black, RoundedCornerShape(24.dp)),
                     ) {
                         CameraPreview(
                             onPairingCode = onPairingCodeDetected,
@@ -156,18 +139,18 @@ fun QrScannerScreen(
                         Box(
                             modifier = Modifier
                                 .align(Alignment.Center)
-                                .fillMaxWidth(0.64f)
+                                .fillMaxWidth(0.62f)
                                 .aspectRatio(1f)
                                 .border(
                                     width = 3.dp,
                                     color = Color.White,
-                                    shape = RoundedCornerShape(18.dp),
+                                    shape = RoundedCornerShape(20.dp),
                                 ),
                         )
                         Surface(
                             color = Color.Black.copy(alpha = 0.68f),
                             contentColor = Color.White,
-                            shape = RoundedCornerShape(10.dp),
+                            shape = RoundedCornerShape(14.dp),
                             modifier = Modifier
                                 .align(Alignment.BottomCenter)
                                 .padding(12.dp),
@@ -190,6 +173,7 @@ fun QrScannerScreen(
                                 permissionRequested = true
                                 permissionLauncher.launch(Manifest.permission.CAMERA)
                             },
+                            modifier = Modifier.height(52.dp),
                         ) {
                             Icon(Icons.Rounded.CameraAlt, contentDescription = null)
                             Spacer(Modifier.width(8.dp))
@@ -201,7 +185,7 @@ fun QrScannerScreen(
 
             cameraError?.let { error ->
                 Surface(
-                    color = MaterialTheme.colorScheme.errorContainer,
+                    color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.88f),
                     contentColor = MaterialTheme.colorScheme.onErrorContainer,
                     shape = MaterialTheme.shapes.medium,
                     modifier = Modifier.fillMaxWidth(),
@@ -213,7 +197,11 @@ fun QrScannerScreen(
                     )
                 }
             }
+        }
+    }
 
+    val manualSection: @Composable () -> Unit = {
+        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth(),
@@ -227,7 +215,7 @@ fun QrScannerScreen(
                 Text(
                     text = "手動輸入",
                     style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
+                    fontWeight = FontWeight.Black,
                 )
             }
             OutlinedTextField(
@@ -243,18 +231,63 @@ fun QrScannerScreen(
                 supportingText = manualError?.let { error -> { Text(error) } },
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = { submitManualCode() }),
-                leadingIcon = {
-                    Icon(Icons.Rounded.QrCodeScanner, contentDescription = null)
-                },
+                leadingIcon = { Icon(Icons.Rounded.QrCodeScanner, contentDescription = null) },
+                shape = RoundedCornerShape(18.dp),
                 modifier = Modifier.fillMaxWidth(),
             )
             Button(
                 onClick = ::submitManualCode,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(50.dp),
+                    .height(54.dp),
             ) {
                 Text("檢查配對碼")
+            }
+        }
+    }
+
+    AuroraScaffold(
+        topBar = { AuroraTopBar(title = "掃描電視配對碼", onBack = onBack) },
+    ) { contentPadding ->
+        BoxWithConstraints(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(contentPadding)
+                .imePadding(),
+        ) {
+            val wide = maxWidth >= 760.dp && maxWidth > maxHeight
+            GlassPane(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .widthIn(max = 1080.dp)
+                    .padding(horizontal = 16.dp, vertical = 18.dp),
+                emphasis = true,
+            ) {
+                if (wide) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .verticalScroll(rememberScrollState())
+                            .padding(20.dp),
+                        horizontalArrangement = Arrangement.spacedBy(24.dp),
+                        verticalAlignment = Alignment.Top,
+                    ) {
+                        Column(Modifier.weight(1.25f)) { cameraSection() }
+                        Column(Modifier.weight(0.75f)) { manualSection() }
+                    }
+                } else {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .verticalScroll(rememberScrollState())
+                            .padding(18.dp),
+                        verticalArrangement = Arrangement.spacedBy(22.dp),
+                    ) {
+                        cameraSection()
+                        manualSection()
+                    }
+                }
             }
         }
     }

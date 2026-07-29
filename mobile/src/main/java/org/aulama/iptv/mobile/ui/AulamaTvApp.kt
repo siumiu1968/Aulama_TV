@@ -5,11 +5,6 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.content.pm.ActivityInfo
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -23,9 +18,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -61,7 +58,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
@@ -81,7 +77,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -106,6 +101,10 @@ import org.aulama.iptv.mobile.RegionChannels
 import org.aulama.iptv.mobile.SelectedChannel
 import org.aulama.iptv.mobile.data.auth.AulamaAccountState
 import org.aulama.iptv.mobile.data.playback.PlaybackCandidate
+import org.aulama.iptv.mobile.ui.components.AuroraBackdrop
+import org.aulama.iptv.mobile.ui.components.AuroraScaffold
+import org.aulama.iptv.mobile.ui.components.GlassPane
+import org.aulama.iptv.mobile.ui.components.glassSurfaceColor
 import org.aulama.iptv.mobile.ui.account.AccountScreen
 import org.aulama.iptv.mobile.ui.onboarding.WelcomeScreen
 import org.aulama.iptv.mobile.ui.pairing.PairingCode
@@ -171,8 +170,8 @@ fun AulamaTvApp(viewModel: MobileMainViewModel) {
     val scope = rememberCoroutineScope()
     var minimumSplashElapsed by remember { mutableStateOf(false) }
     var initialSplashFinished by remember { mutableStateOf(false) }
-    var fullscreen by remember { mutableStateOf(false) }
-    var showRouteSheet by remember { mutableStateOf(false) }
+    var fullscreen by rememberSaveable { mutableStateOf(false) }
+    var showRouteSheet by rememberSaveable { mutableStateOf(false) }
     var destinationName by rememberSaveable {
         mutableStateOf(
             if (viewModel.onboardingCompleted.value) {
@@ -372,7 +371,7 @@ fun AulamaTvApp(viewModel: MobileMainViewModel) {
             modifier = Modifier.fillMaxSize(),
         )
     } else {
-        Scaffold(
+        AuroraScaffold(
             topBar = {
                 AulamaTopBar(
                     darkTheme = darkTheme,
@@ -383,19 +382,20 @@ fun AulamaTvApp(viewModel: MobileMainViewModel) {
                 )
             },
             snackbarHost = { SnackbarHost(snackbarHostState) },
-            containerColor = MaterialTheme.colorScheme.background,
         ) { contentPadding ->
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(contentPadding),
+                    .padding(contentPadding)
+                    .imePadding(),
             ) {
                 if (uiState is MobileUiState.Loading) {
                     LinearProgressIndicator(Modifier.fillMaxWidth())
                 }
 
                 BoxWithConstraints(Modifier.fillMaxSize()) {
-                    val useWideLayout = maxWidth >= 760.dp
+                    val useWideLayout = maxWidth >= 840.dp ||
+                        (maxWidth >= 600.dp && maxWidth > maxHeight)
                     if (useWideLayout) {
                         WideLayout(
                             uiState = uiState,
@@ -411,6 +411,7 @@ fun AulamaTvApp(viewModel: MobileMainViewModel) {
                             epgState = epgState,
                             currentTimeMs = epgClockMs,
                             viewModel = viewModel,
+                            compact = maxHeight < 520.dp,
                             onFullscreen = { fullscreen = true },
                             onShowRoutes = { showRouteSheet = true },
                         )
@@ -461,72 +462,38 @@ fun AulamaTvApp(viewModel: MobileMainViewModel) {
 
 @Composable
 private fun AulamaLoadingScreen() {
-    val transition = rememberInfiniteTransition(label = "loadingGlow")
-    val glowAlpha by transition.animateFloat(
-        initialValue = 0.30f,
-        targetValue = 0.62f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 1600),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "loadingGlowAlpha",
-    )
-
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(
-                        Color(0xFF02070C),
-                        Color(0xFF071522),
-                        Color(0xFF02070C),
-                    ),
-                ),
-            ),
-        contentAlignment = Alignment.Center,
-    ) {
+    AuroraBackdrop {
         Box(
-            modifier = Modifier
-                .size(340.dp)
-                .alpha(glowAlpha)
-                .background(
-                    brush = Brush.radialGradient(
-                        colors = listOf(
-                            Color(0x3348D9FF),
-                            Color(0x1AE94B96),
-                            Color.Transparent,
-                        ),
-                    ),
-                    shape = CircleShape,
-                ),
-        )
-
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center,
         ) {
-            androidx.compose.foundation.Image(
-                painter = painterResource(R.drawable.aulama_tv_logo),
-                contentDescription = "Aulama TV",
-                modifier = Modifier
-                    .width(236.dp)
-                    .height(100.dp),
-                contentScale = ContentScale.Fit,
-            )
-            Spacer(Modifier.height(28.dp))
-            CircularProgressIndicator(
-                modifier = Modifier.size(28.dp),
-                color = Color(0xFF54D8FF),
-                trackColor = Color.White.copy(alpha = 0.12f),
-                strokeWidth = 2.5.dp,
-            )
-            Spacer(Modifier.height(14.dp))
-            Text(
-                text = "正在準備頻道",
-                color = Color.White.copy(alpha = 0.72f),
-                style = MaterialTheme.typography.labelMedium,
-            )
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                androidx.compose.foundation.Image(
+                    painter = painterResource(R.drawable.aulama_tv_logo),
+                    contentDescription = "Aulama TV",
+                    modifier = Modifier
+                        .widthIn(max = 236.dp)
+                        .fillMaxWidth(0.62f)
+                        .height(100.dp),
+                    contentScale = ContentScale.Fit,
+                )
+                Spacer(Modifier.height(24.dp))
+                CircularProgressIndicator(
+                    modifier = Modifier.size(28.dp),
+                    color = MaterialTheme.colorScheme.primary,
+                    trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f),
+                    strokeWidth = 2.5.dp,
+                )
+                Spacer(Modifier.height(14.dp))
+                Text(
+                    text = "正在準備頻道",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.labelLarge,
+                )
+            }
         }
     }
 }
@@ -546,28 +513,38 @@ private fun AulamaTopBar(
                 painter = painterResource(R.drawable.aulama_tv_logo),
                 contentDescription = "Aulama TV",
                 modifier = Modifier
-                    .width(116.dp)
+                    .width(108.dp)
                     .height(48.dp),
                 contentScale = ContentScale.Fit,
             )
         },
         actions = {
-            IconButton(onClick = onOpenSettings) {
+            IconButton(
+                onClick = onOpenSettings,
+                modifier = Modifier.size(48.dp),
+            ) {
                 Icon(Icons.Rounded.Settings, contentDescription = "設定")
             }
-            IconButton(onClick = onToggleTheme) {
+            IconButton(
+                onClick = onToggleTheme,
+                modifier = Modifier.size(48.dp),
+            ) {
                 Icon(
                     imageVector = if (darkTheme) Icons.Rounded.LightMode else Icons.Rounded.DarkMode,
                     contentDescription = if (darkTheme) "切換淺色模式" else "切換深色模式",
                 )
             }
-            IconButton(onClick = onRefresh, enabled = !loading) {
+            IconButton(
+                onClick = onRefresh,
+                enabled = !loading,
+                modifier = Modifier.size(48.dp),
+            ) {
                 Icon(Icons.Rounded.Refresh, contentDescription = "重新整理頻道")
             }
         },
         colors = TopAppBarDefaults.topAppBarColors(
-            containerColor = MaterialTheme.colorScheme.surface,
-            scrolledContainerColor = MaterialTheme.colorScheme.surface,
+            containerColor = glassSurfaceColor(),
+            scrolledContainerColor = glassSurfaceColor(emphasis = true),
         ),
     )
 }
@@ -599,7 +576,7 @@ private fun PhoneLayout(
             onToggleFullscreen = onFullscreen,
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 10.dp)
+                .padding(start = 12.dp, top = 10.dp, end = 12.dp, bottom = 6.dp)
                 .aspectRatio(16f / 9f),
         )
         NowPlayingStrip(
@@ -611,7 +588,8 @@ private fun PhoneLayout(
             epgState = epgState,
             currentTimeMs = currentTimeMs,
             onShowRoutes = onShowRoutes,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
+            compact = false,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
         )
         ChannelBrowser(
             uiState = uiState,
@@ -642,18 +620,19 @@ private fun WideLayout(
     epgState: MobileEpgState,
     currentTimeMs: Long,
     viewModel: MobileMainViewModel,
+    compact: Boolean,
     onFullscreen: () -> Unit,
     onShowRoutes: () -> Unit,
 ) {
     Row(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp),
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         Column(
             modifier = Modifier
-                .weight(1.35f)
+                .weight(1.6f)
                 .fillMaxHeight(),
         ) {
             DirectVideoPlayer(
@@ -662,9 +641,16 @@ private fun WideLayout(
                 channelName = selectedChannel?.channel?.name.orEmpty(),
                 fullscreen = false,
                 onToggleFullscreen = onFullscreen,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(16f / 9f),
+                modifier = if (compact) {
+                    Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .heightIn(min = 168.dp)
+                } else {
+                    Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(16f / 9f)
+                },
             )
             NowPlayingStrip(
                 selectedChannel = selectedChannel,
@@ -675,28 +661,27 @@ private fun WideLayout(
                 epgState = epgState,
                 currentTimeMs = currentTimeMs,
                 onShowRoutes = onShowRoutes,
-                modifier = Modifier.padding(top = 12.dp),
+                compact = compact,
+                modifier = Modifier.padding(top = if (compact) 6.dp else 10.dp),
             )
         }
-        Divider(
-            modifier = Modifier
-                .fillMaxHeight()
-                .width(1.dp),
-            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.28f),
-        )
-        ChannelBrowser(
-            uiState = uiState,
-            selectedChannel = selectedChannel,
-            selectedRegion = selectedRegion,
-            query = query,
-            favoritesOnly = favoritesOnly,
-            favorites = favorites,
-            epgList = epgList,
-            viewModel = viewModel,
+        GlassPane(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxHeight(),
-        )
+        ) {
+            ChannelBrowser(
+                uiState = uiState,
+                selectedChannel = selectedChannel,
+                selectedRegion = selectedRegion,
+                query = query,
+                favoritesOnly = favoritesOnly,
+                favorites = favorites,
+                epgList = epgList,
+                viewModel = viewModel,
+                modifier = Modifier.fillMaxHeight(),
+            )
+        }
     }
 }
 
@@ -710,6 +695,7 @@ private fun NowPlayingStrip(
     epgState: MobileEpgState,
     currentTimeMs: Long,
     onShowRoutes: () -> Unit,
+    compact: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val programmes = selectedChannel?.channel?.let { epgList.recentProgramme(it) }
@@ -720,14 +706,14 @@ private fun NowPlayingStrip(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = 58.dp),
+                .heightIn(min = if (compact) 50.dp else 58.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f)) {
                 Text(
                     text = selectedChannel?.channel?.name ?: "揀選頻道開始播放",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Black,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -755,7 +741,10 @@ private fun NowPlayingStrip(
             }
 
             if ((selectedChannel?.channel?.routes?.size ?: 0) > 1) {
-                TextButton(onClick = onShowRoutes) {
+                TextButton(
+                    onClick = onShowRoutes,
+                    modifier = Modifier.heightIn(min = 48.dp),
+                ) {
                     Text("線路 ${routeIndex + 1}/${selectedChannel!!.channel.routes.size}")
                 }
             }
@@ -766,6 +755,7 @@ private fun NowPlayingStrip(
                 now = now,
                 next = programmes.next,
                 currentTimeMs = currentTimeMs,
+                compact = compact,
             )
         } ?: selectedChannel?.let {
             val message = when {
@@ -790,11 +780,12 @@ private fun ProgrammeSummary(
     now: EpgProgramme,
     next: EpgProgramme?,
     currentTimeMs: Long,
+    compact: Boolean,
 ) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(bottom = 10.dp),
+            .padding(bottom = if (compact) 4.dp else 10.dp),
         verticalArrangement = Arrangement.spacedBy(5.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -807,36 +798,39 @@ private fun ProgrammeSummary(
             )
             Text(
                 text = now.title,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Medium,
+                style = if (compact) MaterialTheme.typography.titleSmall
+                else MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Black,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
         }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = programmeWindow(now),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                modifier = Modifier.weight(1f),
-            )
-            Spacer(Modifier.width(8.dp))
-            Text(
-                text = "尚餘 ${now.remainingMinutes(currentTimeMs)} 分鐘",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-            )
+        if (!compact) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = programmeWindow(now),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    modifier = Modifier.weight(1f),
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = "尚餘 ${now.remainingMinutes(currentTimeMs)} 分鐘",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                )
+            }
         }
         LinearProgressIndicator(
             progress = { now.progress(currentTimeMs) },
             modifier = Modifier
                 .fillMaxWidth()
-                .height(3.dp),
+                .height(5.dp),
         )
-        next?.let {
+        if (!compact) next?.let {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = "下一節",
@@ -848,7 +842,8 @@ private fun ProgrammeSummary(
                 Column(Modifier.weight(1f)) {
                     Text(
                         text = it.title,
-                        style = MaterialTheme.typography.bodySmall,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -891,7 +886,13 @@ private fun ChannelBrowser(
                         if (favoritesOnly) viewModel.toggleFavoritesOnly()
                         viewModel.selectRegion(region.name)
                     },
-                    label = { Text(region.name) },
+                    label = {
+                        Text(
+                            text = region.name,
+                            style = MaterialTheme.typography.labelLarge,
+                        )
+                    },
+                    modifier = Modifier.heightIn(min = 48.dp),
                     leadingIcon = if (selectedRegion == region.name && !favoritesOnly) {
                         { Icon(Icons.Rounded.CheckCircle, null, Modifier.size(18.dp)) }
                     } else null,
@@ -1011,6 +1012,7 @@ private fun ChannelRow(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .heightIn(min = 76.dp)
                 .padding(start = 10.dp, top = 8.dp, bottom = 8.dp, end = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -1021,16 +1023,15 @@ private fun ChannelRow(
                 loading = { ChannelLogoFallback() },
                 error = { ChannelLogoFallback() },
                 modifier = Modifier
-                    .size(48.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                    .size(52.dp)
+                    .padding(3.dp),
             )
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(
                     text = item.channel.name,
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Black,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -1134,11 +1135,16 @@ private fun RouteSheet(
     onTogglePriority: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        shape = RoundedCornerShape(topStart = 30.dp, topEnd = 30.dp),
+        containerColor = glassSurfaceColor(emphasis = true),
+        tonalElevation = 0.dp,
+    ) {
         Text(
             text = selectedChannel.channel.name,
             style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.SemiBold,
+            fontWeight = FontWeight.Black,
             modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
         )
         Text(
@@ -1158,10 +1164,12 @@ private fun RouteSheet(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 12.dp, vertical = 2.dp),
-                shape = RoundedCornerShape(14.dp),
+                shape = RoundedCornerShape(18.dp),
             ) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                    modifier = Modifier
+                        .heightIn(min = 68.dp)
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     RadioButton(
@@ -1172,8 +1180,8 @@ private fun RouteSheet(
                     Column(Modifier.weight(1f)) {
                         Text(
                             text = route.label.ifBlank { "線路 ${index + 1}" },
-                            style = MaterialTheme.typography.bodyLarge,
-                            fontWeight = FontWeight.Medium,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Black,
                         )
                         Text(
                             text = "${route.quality.label} · 線路 ${index + 1}",

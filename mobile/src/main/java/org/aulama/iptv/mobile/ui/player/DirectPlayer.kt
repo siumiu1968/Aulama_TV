@@ -5,9 +5,11 @@ import android.net.Uri
 import android.os.SystemClock
 import androidx.annotation.OptIn
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -429,9 +431,17 @@ fun DirectVideoPlayer(
         if (candidate == null) state.stop() else state.prepare(candidate)
     }
 
+    val playerShape = if (fullscreen) RoundedCornerShape(0.dp) else RoundedCornerShape(24.dp)
     Box(
         modifier = modifier
-            .clip(if (fullscreen) RoundedCornerShape(0.dp) else RoundedCornerShape(16.dp))
+            .then(
+                if (fullscreen) Modifier else Modifier.border(
+                    width = 1.dp,
+                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.28f),
+                    shape = playerShape,
+                ),
+            )
+            .clip(playerShape)
             .background(Color.Black),
     ) {
         if (candidate != null) {
@@ -475,7 +485,10 @@ fun DirectVideoPlayer(
             color = Color.Black.copy(alpha = 0.58f),
             contentColor = Color.White,
         ) {
-            IconButton(onClick = onToggleFullscreen) {
+            IconButton(
+                onClick = onToggleFullscreen,
+                modifier = Modifier.size(48.dp),
+            ) {
                 Icon(
                     imageVector = if (fullscreen) Icons.Rounded.FullscreenExit else Icons.Rounded.Fullscreen,
                     contentDescription = if (fullscreen) "離開全螢幕" else "全螢幕",
