@@ -4,6 +4,7 @@ import android.app.Application
 import coil.ImageLoader
 import coil.ImageLoaderFactory
 import coil.disk.DiskCache
+import coil.decode.SvgDecoder
 import coil.memory.MemoryCache
 import coil.request.CachePolicy
 import top.yogiczy.mytv.core.data.AppData
@@ -35,6 +36,9 @@ class MyTVApplication : Application(), ImageLoaderFactory {
             }
             .diskCachePolicy(CachePolicy.ENABLED)
             .memoryCachePolicy(CachePolicy.ENABLED)
+            .components {
+                add(SvgDecoder.Factory())
+            }
             .crossfade(true)
             .build()
     }

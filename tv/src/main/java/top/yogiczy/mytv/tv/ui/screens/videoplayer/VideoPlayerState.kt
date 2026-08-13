@@ -31,6 +31,7 @@ import top.yogiczy.mytv.tv.ui.screens.videoplayer.player.LeTvVideoPlayer
 import top.yogiczy.mytv.tv.ui.screens.videoplayer.player.Media3VideoPlayer
 import top.yogiczy.mytv.tv.ui.screens.videoplayer.player.VideoPlayer
 import top.yogiczy.mytv.tv.ui.utils.Configs
+import top.yogiczy.mytv.tv.ui.utils.IptvDegradationReason
 import top.yogiczy.mytv.tv.ui.utils.IptvPlaybackMode
 import top.yogiczy.mytv.tv.ui.utils.IptvPlaybackHealthPolicy
 import top.yogiczy.mytv.tv.ui.utils.IptvPlaybackHealthWindow
@@ -43,6 +44,59 @@ internal fun shouldTryPlaybackModeFallback(errorCodeName: String, errorCode: Int
         "UNSUPPORTED",
         "PARSING_CONTAINER",
     ).any(normalized::contains)
+}
+
+internal fun shouldTryPlaybackModeFallbackForRoute(
+    quality: ChannelQuality,
+    currentMode: IptvPlaybackMode,
+    errorCodeName: String,
+    errorCode: Int,
+): Boolean =
+    (quality == ChannelQuality.UHD_4K && currentMode == IptvPlaybackMode.MEDIA3) ||
+        shouldTryPlaybackModeFallback(errorCodeName, errorCode)
+
+internal fun selectPlaybackModeForRoute(
+    quality: ChannelQuality,
+    preferredMode: IptvPlaybackMode?,
+    configuredType: Configs.VideoPlayerType,
+    requiresTvbHlsSession: Boolean,
+    sdkInt: Int,
+): IptvPlaybackMode = when {
+    quality == ChannelQuality.UHD_4K && preferredMode == IptvPlaybackMode.IJK ->
+        IptvPlaybackMode.IJK
+
+    quality == ChannelQuality.UHD_4K && sdkInt <= Build.VERSION_CODES.M ->
+        IptvPlaybackMode.IJK
+
+    quality == ChannelQuality.UHD_4K -> IptvPlaybackMode.MEDIA3
+    requiresTvbHlsSession -> IptvPlaybackMode.MEDIA3
+    preferredMode != null -> preferredMode
+    configuredType == Configs.VideoPlayerType.IJK -> IptvPlaybackMode.IJK
+    else -> IptvPlaybackMode.MEDIA3
+}
+
+internal fun playbackModeFallbackCandidates(
+    quality: ChannelQuality,
+    currentMode: IptvPlaybackMode,
+): List<IptvPlaybackMode> = if (quality == ChannelQuality.UHD_4K) {
+    if (currentMode == IptvPlaybackMode.MEDIA3) listOf(IptvPlaybackMode.IJK) else emptyList()
+} else {
+    when (currentMode) {
+        IptvPlaybackMode.IJK -> listOf(
+            IptvPlaybackMode.IJK_SOFTWARE,
+            IptvPlaybackMode.MEDIA3,
+        )
+
+        IptvPlaybackMode.IJK_SOFTWARE -> listOf(
+            IptvPlaybackMode.IJK,
+            IptvPlaybackMode.MEDIA3,
+        )
+
+        IptvPlaybackMode.MEDIA3 -> listOf(
+            IptvPlaybackMode.IJK,
+            IptvPlaybackMode.IJK_SOFTWARE,
+        )
+    }
 }
 
 @Stable
@@ -141,6 +195,14 @@ class VideoPlayerState(
         if (!initialized) initialize()
         if (currentRoute?.url != route.url) {
             fourKFallbackRouteUrl = null
+        }
+        if (
+            route.quality == ChannelQuality.UHD_4K &&
+            preferredPlaybackMode == IptvPlaybackMode.IJK
+        ) {
+            // A previous first frame proved that standard IJK works for this 4K URL.
+            // Reuse it instead of probing Media3 or a vendor decoder again.
+            fourKFallbackRouteUrl = route.url
         }
         attemptedPlaybackModes.clear()
         playbackGeneration += 1
@@ -264,6 +326,13 @@ class VideoPlayerState(
         onPlaybackDegradedListeners.forEach { it(reason) }
     }
 
+    private fun reportHealthDegradation(reason: IptvDegradationReason) {
+        reportPlaybackDegraded(
+            reason = IptvPlaybackHealthPolicy.reasonCode(reason),
+            allowPlaybackModeFallback = currentRoute?.quality == ChannelQuality.UHD_4K,
+        )
+    }
+
     private fun resetPlaybackHealthWindow() {
         firstFrameHealthJob?.cancel()
         ratioHealthJob?.cancel()
@@ -276,7 +345,7 @@ class VideoPlayerState(
                 playbackHealthWindow,
                 System.currentTimeMillis(),
                 currentFirstFrameTimeoutMs,
-            )?.let { reportPlaybackDegraded(IptvPlaybackHealthPolicy.reasonCode(it)) }
+            )?.let(::reportHealthDegradation)
         }
     }
 
@@ -290,7 +359,7 @@ class VideoPlayerState(
                     playbackHealthWindow,
                     System.currentTimeMillis(),
                     currentFirstFrameTimeoutMs,
-                )?.let { reportPlaybackDegraded(IptvPlaybackHealthPolicy.reasonCode(it)) }
+                )?.let(::reportHealthDegradation)
                 delay(5_000L)
             }
         }
@@ -298,25 +367,15 @@ class VideoPlayerState(
 
     private fun tryPlaybackModeFallback(): Boolean {
         val route = currentRoute ?: return false
-        if (route.quality == ChannelQuality.UHD_4K) return false
-
-        val candidates = when (playbackMode) {
-            IptvPlaybackMode.IJK -> listOf(
-                IptvPlaybackMode.IJK_SOFTWARE,
-                IptvPlaybackMode.MEDIA3,
-            )
-            IptvPlaybackMode.IJK_SOFTWARE -> listOf(
-                IptvPlaybackMode.IJK,
-                IptvPlaybackMode.MEDIA3,
-            )
-            IptvPlaybackMode.MEDIA3 -> listOf(
-                IptvPlaybackMode.IJK,
-                IptvPlaybackMode.IJK_SOFTWARE,
-            )
-        }
+        val candidates = playbackModeFallbackCandidates(route.quality, playbackMode)
         val nextMode = candidates.firstOrNull { it !in attemptedPlaybackModes } ?: return false
         val previousMode = playbackMode
         attemptedPlaybackModes += nextMode
+        if (route.quality == ChannelQuality.UHD_4K && nextMode == IptvPlaybackMode.IJK) {
+            // Media3 failed on this exact 4K route. Use the standard IJK path once before
+            // considering another 4K route; do not detour through a vendor/software decoder.
+            fourKFallbackRouteUrl = route.url
+        }
 
         playbackGeneration += 1
         bufferingHealthJob?.cancel()
@@ -347,21 +406,13 @@ class VideoPlayerState(
         route: ChannelRoute,
         preferredMode: IptvPlaybackMode? = null,
         configuredType: Configs.VideoPlayerType = Configs.videoPlayerType,
-    ): IptvPlaybackMode =
-        if (route.quality == ChannelQuality.UHD_4K) {
-            if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.M) {
-                IptvPlaybackMode.IJK
-            } else {
-                IptvPlaybackMode.MEDIA3
-            }
-        } else if (Media3VideoPlayer.requiresTvbHlsSession(route)) {
-            IptvPlaybackMode.MEDIA3
-        } else {
-            preferredMode ?: when (configuredType) {
-                Configs.VideoPlayerType.IJK -> IptvPlaybackMode.IJK
-                Configs.VideoPlayerType.MEDIA3 -> IptvPlaybackMode.MEDIA3
-            }
-        }
+    ): IptvPlaybackMode = selectPlaybackModeForRoute(
+        quality = route.quality,
+        preferredMode = preferredMode,
+        configuredType = configuredType,
+        requiresTvbHlsSession = Media3VideoPlayer.requiresTvbHlsSession(route),
+        sdkInt = Build.VERSION.SDK_INT,
+    )
 
     private fun shouldUseLeTvVendorPlayer(mode: IptvPlaybackMode): Boolean =
         mode == IptvPlaybackMode.IJK &&
@@ -386,7 +437,9 @@ class VideoPlayerState(
     private fun prepareWithMode(route: ChannelRoute, mode: IptvPlaybackMode) {
         requiresSurfaceView = route.quality == ChannelQuality.UHD_4K ||
             mode == IptvPlaybackMode.MEDIA3
-        if (switchPlayerIfNeeded(mode)) {
+        val switchedPlayer = switchPlayerIfNeeded(mode)
+        instance.setFirstFrameTimeoutMs(currentFirstFrameTimeoutMs)
+        if (switchedPlayer) {
             pendingPrepareRoute = route
         } else {
             pendingPrepareRoute = null
@@ -467,31 +520,13 @@ class VideoPlayerState(
 
             if (
                 ex != null &&
-                route?.quality == ChannelQuality.UHD_4K &&
-                activePlayerType == Configs.VideoPlayerType.MEDIA3 &&
-                fourKFallbackRouteUrl != route.url &&
-                ex.errorCodeName.contains("DECODER", ignoreCase = true)
-            ) {
-                fourKFallbackRouteUrl = route.url
-                hasRenderedFirstFrame = false
-                isBuffering = true
-                error = null
-                retryMessage = "正在調整 4K 播放"
-                coroutineScope.launch {
-                    if (
-                        currentRoute?.url == route.url &&
-                        activePlayerType == Configs.VideoPlayerType.MEDIA3
-                    ) {
-                        attemptedPlaybackModes += IptvPlaybackMode.IJK
-                        prepareWithMode(route, IptvPlaybackMode.IJK)
-                    }
-                }
-                return@playerError
-            }
-
-            if (
-                ex != null &&
-                shouldTryPlaybackModeFallback(ex.errorCodeName, ex.errorCode) &&
+                route != null &&
+                shouldTryPlaybackModeFallbackForRoute(
+                    quality = route.quality,
+                    currentMode = playbackMode,
+                    errorCodeName = ex.errorCodeName,
+                    errorCode = ex.errorCode,
+                ) &&
                 tryPlaybackModeFallback()
             ) {
                 return@playerError
@@ -527,9 +562,7 @@ class VideoPlayerState(
                 now,
                 currentFirstFrameTimeoutMs,
             )
-                ?.let { reason ->
-                    reportPlaybackDegraded(IptvPlaybackHealthPolicy.reasonCode(reason))
-                }
+                ?.let(::reportHealthDegradation)
         }
         instance.onPrepared { }
         instance.onFirstFrame {

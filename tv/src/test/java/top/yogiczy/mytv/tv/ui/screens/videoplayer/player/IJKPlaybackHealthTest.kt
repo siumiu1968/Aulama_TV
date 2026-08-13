@@ -90,6 +90,34 @@ class IJKPlaybackHealthTest {
     }
 
     @Test
+    fun `stalled live timeline stays healthy while decode and output fps are healthy`() {
+        assertFalse(
+            isPlaybackHealthUnhealthy(
+                outputFps = 25f,
+                decodeFps = 25f,
+                progressDelta = 0L,
+                minimumFps = 16f,
+                hasObservedOutputFps = true,
+                hasObservedDecodeFps = true,
+            ),
+        )
+    }
+
+    @Test
+    fun `healthy decode fps beats an unavailable live timeline and output counter`() {
+        assertFalse(
+            isPlaybackHealthUnhealthy(
+                outputFps = 0f,
+                decodeFps = 31.25f,
+                progressDelta = 250L,
+                minimumFps = 16f,
+                hasObservedOutputFps = false,
+                hasObservedDecodeFps = true,
+            ),
+        )
+    }
+
+    @Test
     fun `normal fps and advancing position remain healthy`() {
         assertFalse(
             isPlaybackHealthUnhealthy(

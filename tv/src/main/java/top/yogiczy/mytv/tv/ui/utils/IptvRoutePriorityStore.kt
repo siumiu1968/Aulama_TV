@@ -2,6 +2,7 @@ package top.yogiczy.mytv.tv.ui.utils
 
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
+import top.yogiczy.mytv.core.data.entities.channel.ChannelQuality
 import top.yogiczy.mytv.core.data.entities.channel.ChannelRoute
 import top.yogiczy.mytv.core.data.utils.SP
 import top.yogiczy.mytv.tv.account.AulamaTvSync
@@ -84,4 +85,24 @@ internal fun mergeRouteAttemptOrder(
         addAll(automaticIndices.filter(routes.indices::contains))
         addAll(routes.indices)
     }.distinct()
+}
+
+internal fun keepManualFourKFallbacksTogether(
+    routes: List<ChannelRoute>,
+    attemptOrder: List<Int>,
+    requestedIndex: Int?,
+): List<Int> {
+    val requested = requestedIndex?.takeIf(routes.indices::contains) ?: return attemptOrder
+    if (routes[requested].quality != ChannelQuality.UHD_4K) return attemptOrder
+
+    val validOrder = (attemptOrder + routes.indices).filter(routes.indices::contains).distinct()
+    return buildList {
+        add(requested)
+        addAll(validOrder.filter { index ->
+            index != requested && routes[index].quality == ChannelQuality.UHD_4K
+        })
+        addAll(validOrder.filter { index ->
+            index != requested && routes[index].quality != ChannelQuality.UHD_4K
+        })
+    }
 }

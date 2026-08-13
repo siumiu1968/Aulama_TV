@@ -41,4 +41,54 @@ class M3uIptvParserTest {
         assertEquals("https://news.now.com/home/live", now.routes.first().referrer)
         assertTrue(now.routes.first().requestHeaders.containsKey("Referer"))
     }
+
+    @Test
+    fun `uses the same curated Hong Kong logos as the web app`() = runBlocking {
+        val playlist = """
+            #EXTM3U
+            #EXTINF:-1 tvg-id="368361" tvg-name="TVB Plus" tvg-logo="https://old.example/tvb-plus.png" group-title="香港",TVB Plus 82（1080p）
+            https://example.com/tvb-plus.m3u8
+            #EXTINF:-1 tvg-id="3493" tvg-name="TVB星河" tvg-logo="https://old.example/xinghe.jpg" group-title="香港",TVB星河（1080p）
+            https://example.com/xinghe.m3u8
+            #EXTINF:-1 tvg-id="HongKongInternationalBusinessChannel.hk" tvg-name="HOY 76" tvg-logo="https://old.example/hoy-76.png" group-title="香港",HOY 76（1080p）
+            https://example.com/hoy-76.m3u8
+            #EXTINF:-1 tvg-id="HOYTV.hk" tvg-name="HOY 77" tvg-logo="https://old.example/hoy-77.png" group-title="香港",HOY 77（1080p）
+            https://example.com/hoy-77.m3u8
+            #EXTINF:-1 tvg-id="HOYInfotainment.hk" tvg-name="HOY 78" tvg-logo="https://old.example/hoy-78.png" group-title="香港",HOY 78（1080p）
+            https://example.com/hoy-78.m3u8
+            #EXTINF:-1 tvg-name="鳳凰衛視香港台" tvg-logo="https://old.example/phoenix.png" group-title="香港",鳳凰衛視香港台（1080p）
+            https://example.com/phoenix.m3u8
+        """.trimIndent()
+
+        val channels = M3uIptvParser().parse(playlist).first().channelList
+
+        assertEquals("https://aulama.org/iptv/channel-logos/tvb-plus.png", channels[0].logo)
+        assertEquals("https://aulama.org/iptv/channel-logos/tvb-xinghe.png", channels[1].logo)
+        assertEquals(
+            "https://aulama.org/iptv/channel-logos/hoy-76.png?v=20260802-transparent",
+            channels[2].logo,
+        )
+        assertEquals(
+            "https://aulama.org/iptv/channel-logos/hoy-77.png?v=20260802-transparent",
+            channels[3].logo,
+        )
+        assertEquals(
+            "https://aulama.org/iptv/channel-logos/hoy-78.png?v=20260802-transparent",
+            channels[4].logo,
+        )
+        assertEquals("https://aulama.org/iptv/channel-logos/phoenix-hk.png", channels[5].logo)
+    }
+
+    @Test
+    fun `keeps the playlist logo for channels without a curated override`() = runBlocking {
+        val playlist = """
+            #EXTM3U
+            #EXTINF:-1 tvg-id="CNA.sg" tvg-name="CNA" tvg-logo="https://example.com/cna.svg" group-title="新加坡｜新聞",CNA（1080p）
+            https://example.com/cna.m3u8
+        """.trimIndent()
+
+        val channel = M3uIptvParser().parse(playlist).first().channelList.first()
+
+        assertEquals("https://example.com/cna.svg", channel.logo)
+    }
 }

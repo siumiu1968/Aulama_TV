@@ -1,5 +1,7 @@
 package top.yogiczy.mytv.tv.ui.utils
 
+import top.yogiczy.mytv.core.data.entities.channel.ChannelQuality
+
 internal data class IptvPlaybackHealthWindow(
     val attemptStartedAtMs: Long,
     val firstFrameAtMs: Long? = null,
@@ -16,10 +18,21 @@ internal sealed interface IptvDegradationReason {
 
 internal object IptvPlaybackHealthPolicy {
     const val firstFrameTimeoutMs = 12_000L
+    const val fourKFirstFrameTimeoutMs = 15_000L
+    const val relayFirstFrameTimeoutMs = 30_000L
     const val stallWindowMs = 45_000L
     const val stallThreshold = 3
     const val bufferRatioWindowMs = 60_000L
     const val bufferRatioThreshold = 0.15
+
+    fun firstFrameTimeoutMsFor(
+        quality: ChannelQuality,
+        isRelay: Boolean,
+    ): Long = when {
+        isRelay -> relayFirstFrameTimeoutMs
+        quality == ChannelQuality.UHD_4K -> fourKFirstFrameTimeoutMs
+        else -> firstFrameTimeoutMs
+    }
 
     fun start(nowMs: Long): IptvPlaybackHealthWindow =
         IptvPlaybackHealthWindow(attemptStartedAtMs = nowMs)

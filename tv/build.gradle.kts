@@ -18,8 +18,8 @@ android {
         applicationId = "top.yogiczy.mytv.tv.tc"
         minSdk = libs.versions.minSdk.get().toInt()
         targetSdk = libs.versions.targetSdk.get().toInt()
-        versionCode = 39
-        versionName = "2.6.14-family"
+        versionCode = 40
+        versionName = "2.6.15-family"
         vectorDrawables {
             useSupportLibrary = true
         }
@@ -103,6 +103,7 @@ dependencies {
     implementation(libs.qrose)
 
     implementation(libs.coil.compose)
+    implementation(libs.coil.svg)
 
     implementation(libs.okhttp)
     implementation(libs.androidasync)

@@ -40,11 +40,16 @@ internal fun playbackHealthIssue(
     hasObservedDecodeFps: Boolean,
     avDifferenceSeconds: Float = Float.NaN,
 ): IJKPlaybackHealthIssue? {
-    val positionStalled = progressDelta < PLAYBACK_HEALTH_MIN_PROGRESS_MS
-    if (positionStalled) return IJKPlaybackHealthIssue.STALLED
-
     val outputFpsAvailableNow = outputFps.isFinite() && outputFps > 0f
     val decodeFpsAvailableNow = decodeFps.isFinite() && decodeFps > 0f
+    val hasHealthyFpsEvidence =
+        (outputFpsAvailableNow && outputFps >= minimumFps) ||
+            (decodeFpsAvailableNow && decodeFps >= minimumFps)
+    val positionStalled = progressDelta < PLAYBACK_HEALTH_MIN_PROGRESS_MS
+    if (positionStalled && !hasHealthyFpsEvidence) {
+        return IJKPlaybackHealthIssue.STALLED
+    }
+
     val outputTooLow = when {
         outputFpsAvailableNow -> outputFps < minimumFps
         hasObservedOutputFps && outputFps.isFinite() -> outputFps <= 0f

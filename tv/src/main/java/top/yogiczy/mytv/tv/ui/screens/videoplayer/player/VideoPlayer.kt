@@ -50,6 +50,11 @@ abstract class VideoPlayer(
     private var loadTimeoutJob: Job? = null
     private var interruptJob: Job? = null
     private var currentPosition = 0L
+    private var firstFrameTimeoutMs: Long? = null
+
+    fun setFirstFrameTimeoutMs(timeoutMs: Long?) {
+        firstFrameTimeoutMs = timeoutMs?.coerceAtLeast(1_000L)
+    }
 
     private val onResolutionListeners = mutableListOf<(width: Int, height: Int) -> Unit>()
     private val onErrorListeners = mutableListOf<(error: PlaybackException?) -> Unit>()
@@ -111,8 +116,7 @@ abstract class VideoPlayer(
         onPreparedListeners.forEach { it() }
         loadTimeoutJob?.cancel()
         loadTimeoutJob = coroutineScope.launch {
-
-            delay(Configs.videoPlayerLoadTimeout)
+            delay(effectiveFirstFrameTimeoutMs(Configs.videoPlayerLoadTimeout, firstFrameTimeoutMs))
             triggerError(PlaybackException.LOAD_TIMEOUT)
         }
         interruptJob?.cancel()
@@ -232,3 +236,8 @@ abstract class VideoPlayer(
         val audioDecoder: String = "",
     )
 }
+
+internal fun effectiveFirstFrameTimeoutMs(
+    configuredTimeoutMs: Long,
+    requestedTimeoutMs: Long?,
+): Long = maxOf(configuredTimeoutMs, requestedTimeoutMs ?: 0L)

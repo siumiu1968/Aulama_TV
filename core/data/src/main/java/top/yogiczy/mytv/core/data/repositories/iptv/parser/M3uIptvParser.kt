@@ -45,6 +45,7 @@ class M3uIptvParser : IptvParser {
                     val item = pending!!
                     val quality = ChannelQuality.detect(item.name, item.channelName, item.groupName)
                     iptvList += IptvResponseItem(
+                        tvgId = item.tvgId,
                         logicalKey = item.tvgId?.takeIf(String::isNotBlank)
                             ?: normalizeChannelName(item.name).lowercase(),
                         name = normalizeChannelName(item.name),
@@ -80,7 +81,12 @@ class M3uIptvParser : IptvParser {
                     name = first.name,
                     epgName = first.channelName,
                     routes = routes,
-                    logo = items.firstNotNullOfOrNull(IptvResponseItem::logo),
+                    logo = AulamaChannelLogoResolver.resolve(
+                        tvgId = first.tvgId,
+                        name = first.name,
+                        epgName = first.channelName,
+                        fallback = items.firstNotNullOfOrNull(IptvResponseItem::logo),
+                    ),
                 ))
             }
             .sortedBy(ParsedChannel::sourceOrder)
@@ -143,6 +149,7 @@ class M3uIptvParser : IptvParser {
     )
 
     private data class IptvResponseItem(
+        val tvgId: String?,
         val logicalKey: String,
         val name: String,
         val channelName: String,

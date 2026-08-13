@@ -4,8 +4,34 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import top.yogiczy.mytv.core.data.entities.channel.ChannelQuality
 
 class IptvPlaybackHealthPolicyTest {
+    @Test
+    fun `direct 4K waits fifteen seconds while relay keeps its longer window`() {
+        assertEquals(
+            15_000L,
+            IptvPlaybackHealthPolicy.firstFrameTimeoutMsFor(
+                quality = ChannelQuality.UHD_4K,
+                isRelay = false,
+            ),
+        )
+        assertEquals(
+            30_000L,
+            IptvPlaybackHealthPolicy.firstFrameTimeoutMsFor(
+                quality = ChannelQuality.UHD_4K,
+                isRelay = true,
+            ),
+        )
+        assertEquals(
+            12_000L,
+            IptvPlaybackHealthPolicy.firstFrameTimeoutMsFor(
+                quality = ChannelQuality.FULL_HD,
+                isRelay = false,
+            ),
+        )
+    }
+
     @Test
     fun `first frame is degraded only after twelve seconds`() {
         val state = IptvPlaybackHealthPolicy.start(1_000L)

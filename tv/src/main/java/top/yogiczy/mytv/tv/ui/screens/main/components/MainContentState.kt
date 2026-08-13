@@ -42,6 +42,7 @@ import top.yogiczy.mytv.tv.ui.utils.IptvPlaybackHealthPolicy
 import top.yogiczy.mytv.tv.ui.utils.IptvPlaybackMode
 import top.yogiczy.mytv.tv.ui.utils.IptvRouteHealthStore
 import top.yogiczy.mytv.tv.ui.utils.IptvRoutePriorityStore
+import top.yogiczy.mytv.tv.ui.utils.keepManualFourKFallbacksTogether
 import top.yogiczy.mytv.tv.ui.utils.mergeRouteAttemptOrder
 import top.yogiczy.mytv.tv.ui.utils.orderRoutesForDisplay
 import top.yogiczy.mytv.tv.account.AulamaAccount
@@ -59,7 +60,6 @@ private const val STABLE_WATCH_SAMPLE_MS = 60_000L
 private const val STABLE_WATCH_FINAL_CREDIT_MS = 45_000L
 private const val QUICK_ROUTE_EXIT_MS = 25_000L
 private const val RELAY_RESOLUTION_TIMEOUT_MS = 4_000L
-private const val RELAY_FIRST_FRAME_TIMEOUT_MS = 30_000L
 private const val SAME_CANDIDATE_RELOAD_COOLDOWN_MS = 120_000L
 private const val SAME_CANDIDATE_RELOAD_DELAY_MS = 260L
 private val SUPER_ADMIN_TRANSPORT_IDS = listOf("hk_relay", "jp_relay", "direct")
@@ -372,6 +372,11 @@ class MainContentState(
     )
 
     private fun scheduleSameCandidateReload(healthKey: String): Boolean {
+        // A 4K attempt already gets one complete Media3 -> IJK pass inside
+        // VideoPlayerState. Repeating the same candidate would delay the other 4K
+        // backups and contradict the manual fallback order.
+        if (currentRouteOrNull()?.quality == ChannelQuality.UHD_4K) return false
+
         val now = System.currentTimeMillis()
         lastCandidateReloadAt.entries.removeAll {
             now - it.value >= SAME_CANDIDATE_RELOAD_COOLDOWN_MS
@@ -471,10 +476,15 @@ class MainContentState(
             supportsHdrOutput = supportsHdrOutput,
         )
 
-        return mergeRouteAttemptOrder(
+        val mergedOrder = mergeRouteAttemptOrder(
             routes = channel.routes,
             priorityUrls = IptvRoutePriorityStore.priorities(channel.name),
             automaticIndices = automaticOrder,
+            requestedIndex = requested,
+        )
+        return keepManualFourKFallbacksTogether(
+            routes = channel.routes,
+            attemptOrder = mergedOrder,
             requestedIndex = requested,
         )
     }
@@ -623,11 +633,10 @@ class MainContentState(
             } else {
                 IptvRouteHealthStore.preferredPlaybackMode(baseRoute.url, attempt.id)
             },
-            firstFrameTimeoutMs = if (attempt.transport == AulamaPlaybackTransport.RELAY) {
-                RELAY_FIRST_FRAME_TIMEOUT_MS
-            } else {
-                IptvPlaybackHealthPolicy.firstFrameTimeoutMs
-            },
+            firstFrameTimeoutMs = IptvPlaybackHealthPolicy.firstFrameTimeoutMsFor(
+                quality = baseRoute.quality,
+                isRelay = attempt.transport == AulamaPlaybackTransport.RELAY,
+            ),
         )
     }
 
@@ -645,14 +654,29 @@ class MainContentState(
             ?: return false
         if (!forceSwitch) {
             val now = System.currentTimeMillis()
+            val currentTransportId = currentPlaybackCandidate()?.id.orEmpty()
             val currentScore = IptvRouteHealthStore.performanceScore(
-                IptvRouteHealthStore.healthFor(currentRoute.url),
+                IptvRouteHealthStore.healthFor(currentRoute.url, currentTransportId),
                 now,
                 currentRoute.quality,
                 supportsHdrOutput,
             )
+            val nextTransportIds = if (AulamaAccount.manager.isSuperAdmin()) {
+                SUPER_ADMIN_TRANSPORT_IDS
+            } else {
+                listOf("direct")
+            }
             val candidateScore = IptvRouteHealthStore.performanceScore(
-                IptvRouteHealthStore.healthFor(nextRoute.url),
+                nextTransportIds.mapNotNull { transportId ->
+                    IptvRouteHealthStore.healthFor(nextRoute.url, transportId)
+                }.maxByOrNull { health ->
+                    IptvRouteHealthStore.performanceScore(
+                        health,
+                        now,
+                        nextRoute.quality,
+                        supportsHdrOutput,
+                    )
+                },
                 now,
                 nextRoute.quality,
                 supportsHdrOutput,
