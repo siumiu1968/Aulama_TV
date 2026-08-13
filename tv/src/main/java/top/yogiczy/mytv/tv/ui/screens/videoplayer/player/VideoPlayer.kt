@@ -136,8 +136,17 @@ abstract class VideoPlayer(
         onMetadataListeners.forEach { it(metadata) }
     }
 
-    protected fun triggerCurrentPosition(position: Long) {
-        if (currentPosition != position) {
+    protected fun triggerCurrentPosition(
+        position: Long,
+        monitorTimelineStall: Boolean = true,
+    ) {
+        if (!monitorTimelineStall) {
+            // IJK live playback has decode/output FPS telemetry. Its HLS timeline can pause
+            // or jump even while frames render normally, so the richer health monitor owns
+            // stall detection and this position-only watchdog must stay disarmed.
+            interruptJob?.cancel()
+            interruptJob = null
+        } else if (shouldArmTimelineStallWatchdog(monitorTimelineStall, currentPosition, position)) {
             interruptJob?.cancel()
             interruptJob = coroutineScope.launch {
                 delay(Configs.videoPlayerLoadTimeout)
@@ -241,3 +250,9 @@ internal fun effectiveFirstFrameTimeoutMs(
     configuredTimeoutMs: Long,
     requestedTimeoutMs: Long?,
 ): Long = maxOf(configuredTimeoutMs, requestedTimeoutMs ?: 0L)
+
+internal fun shouldArmTimelineStallWatchdog(
+    enabled: Boolean,
+    previousPosition: Long,
+    currentPosition: Long,
+): Boolean = enabled && previousPosition != currentPosition

@@ -9,13 +9,13 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/siumiu1968/Aulama_TV/releases/tag/v2.6.15-family"><img src="https://img.shields.io/github/v/release/siumiu1968/Aulama_TV?display_name=tag&label=Android%20TV&color=2383e2" alt="Android TV release" /></a>
+  <a href="https://github.com/siumiu1968/Aulama_TV/releases/tag/v2.6.16-family"><img src="https://img.shields.io/github/v/release/siumiu1968/Aulama_TV?display_name=tag&label=Android%20TV&color=2383e2" alt="Android TV release" /></a>
   <a href="https://github.com/siumiu1968/Aulama_TV/releases"><img src="https://img.shields.io/github/downloads/siumiu1968/Aulama_TV/total?label=downloads" alt="Downloads" /></a>
   <a href="https://apilevels.com/"><img src="https://img.shields.io/badge/Android-5.0%2B-3ddc84?logo=android" alt="Android 5.0+" /></a>
   <a href="./LICENSE"><img src="https://img.shields.io/github/license/siumiu1968/Aulama_TV" alt="MIT License" /></a>
 </p>
 
-> 目前正式版本：Android TV `2.6.15-family`、Android 手機 `1.1.3`。
+> 目前正式版本：Android TV `2.6.16-family`、Android 手機 `1.1.3`。
 
 ## 新版介面
 
@@ -45,7 +45,7 @@
 
 | 平台 | 正式版本 | 下載 |
 | --- | --- | --- |
-| Android TV／Google TV | `2.6.15-family` | [下載 APK](https://github.com/siumiu1968/Aulama_TV/releases/tag/v2.6.15-family) |
+| Android TV／Google TV | `2.6.16-family` | [下載 APK](https://github.com/siumiu1968/Aulama_TV/releases/tag/v2.6.16-family) |
 | Android 手機 | `1.1.3` | [下載 APK](https://github.com/siumiu1968/Aulama_TV/releases/tag/android-v1.1.3) |
 | 網頁版 | 最新版 | [開啟 Aulama IPTV](https://aulama.org/iptv/) |
 

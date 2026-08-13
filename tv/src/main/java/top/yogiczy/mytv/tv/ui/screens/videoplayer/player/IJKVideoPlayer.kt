@@ -307,7 +307,10 @@ class IJKVideoPlayer(
             updatePositionJob?.cancel()
             updatePositionJob = coroutineScope.launch {
                 while (true) {
-                    triggerCurrentPosition(ijkPlayer.currentPosition)
+                    triggerCurrentPosition(
+                        position = ijkPlayer.currentPosition,
+                        monitorTimelineStall = false,
+                    )
                     triggerDuration(ijkPlayer.duration)
                     delay(1000)
                 }
