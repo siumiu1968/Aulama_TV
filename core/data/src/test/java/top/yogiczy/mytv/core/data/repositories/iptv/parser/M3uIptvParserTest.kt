@@ -91,4 +91,60 @@ class M3uIptvParserTest {
 
         assertEquals("https://example.com/cna.svg", channel.logo)
     }
+
+    @Test
+    fun `fills missing China logos from the shared Aulama catalogue`() = runBlocking {
+        val playlist = """
+            #EXTM3U
+            #EXTINF:-1 tvg-id="ZhejiangChildren.cn@HD" tvg-name="浙江少兒" group-title="中國",浙江少兒（1080p）
+            https://example.com/zhejiang-children.m3u8
+            #EXTINF:-1 tvg-id="Suzhou4K.cn@HD" tvg-name="蘇州 4K" group-title="中國",蘇州 4K（4K）
+            https://example.com/suzhou-4k.m3u8
+            #EXTINF:-1 tvg-id="CGTNFrench.cn@SD" tvg-name="CGTN Français" group-title="中國",CGTN Français（1080p）
+            https://example.com/cgtn-fr.m3u8
+        """.trimIndent()
+
+        val channels = M3uIptvParser().parse(playlist).first().channelList
+
+        assertEquals(
+            "https://aulama.org/iptv/channel-logos/cn-zhejiang-children.png?v=20260814",
+            channels[0].logo,
+        )
+        assertEquals(
+            "https://aulama.org/iptv/channel-logos/cn-suzhou-4k.png?v=20260814",
+            channels[1].logo,
+        )
+        assertEquals(
+            "https://aulama.org/iptv/channel-logos/cn-cgtn-french.png?v=20260814",
+            channels[2].logo,
+        )
+    }
+
+    @Test
+    fun `replaces rate limited and SVG international logos with shared PNG artwork`() = runBlocking {
+        val playlist = """
+            #EXTM3U
+            #EXTINF:-1 tvg-id="BloombergTV.us@Plus" tvg-name="Bloomberg TV+" tvg-logo="https://i.imgur.com/old.png" group-title="美國｜財經",Bloomberg TV+
+            https://example.com/bloomberg.m3u8
+            #EXTINF:-1 tvg-id="YahooFinance.us@SD" tvg-name="Yahoo Finance" tvg-logo="https://upload.example/yahoo.svg" group-title="美國｜財經",Yahoo Finance
+            https://example.com/yahoo.m3u8
+            #EXTINF:-1 tvg-id="CNAOriginals.sg@SD" tvg-name="CNA Originals" tvg-logo="https://upload.example/cna.svg" group-title="新加坡｜紀錄",CNA Originals
+            https://example.com/cna-originals.m3u8
+        """.trimIndent()
+
+        val channels = M3uIptvParser().parse(playlist).flatMap { it.channelList }
+
+        assertEquals(
+            "https://aulama.org/iptv/channel-logos/intl-bloomberg.png?v=20260814",
+            channels[0].logo,
+        )
+        assertEquals(
+            "https://aulama.org/iptv/channel-logos/intl-yahoo-finance.png?v=20260814",
+            channels[1].logo,
+        )
+        assertEquals(
+            "https://aulama.org/iptv/channel-logos/intl-cna.png?v=20260814",
+            channels[2].logo,
+        )
+    }
 }

@@ -9,22 +9,22 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/siumiu1968/Aulama_TV/releases/tag/v2.6.16-family"><img src="https://img.shields.io/github/v/release/siumiu1968/Aulama_TV?display_name=tag&label=Android%20TV&color=2383e2" alt="Android TV release" /></a>
+  <a href="https://github.com/siumiu1968/Aulama_TV/releases/tag/v2.6.17-family"><img src="https://img.shields.io/github/v/release/siumiu1968/Aulama_TV?display_name=tag&label=Android%20TV&color=2383e2" alt="Android TV release" /></a>
   <a href="https://github.com/siumiu1968/Aulama_TV/releases"><img src="https://img.shields.io/github/downloads/siumiu1968/Aulama_TV/total?label=downloads" alt="Downloads" /></a>
   <a href="https://apilevels.com/"><img src="https://img.shields.io/badge/Android-5.0%2B-3ddc84?logo=android" alt="Android 5.0+" /></a>
   <a href="./LICENSE"><img src="https://img.shields.io/github/license/siumiu1968/Aulama_TV" alt="MIT License" /></a>
 </p>
 
-> 目前正式版本：Android TV `2.6.16-family`、Android 手機 `1.1.3`。
+> 目前正式版本：Android TV `2.6.17-family`、Android 手機 `1.1.3`。
 
-## 2.6.16 更新重點
+## 2.6.17 更新重點
 
 - **4K 開台更穩定**：翡翠台等 4K 線路會先嘗試同一來源嘅 Media3，再切換 IJK；其後才會測試其他 4K，最後先降至 1080p。
 - **記住成功播放器**：同一線路經 IJK 成功播放後，下次會直接沿用 IJK，避免重複已知失敗嘅 Media3 流程。
 - **減少錯誤切線**：當解碼及畫面輸出 FPS 仍然健康，唔會再只因直播時間軸短暫停頓而誤判卡死。
 - **合理等待首幀**：4K 直連會等候最多 15 秒，俾高碼率直播足夠時間完成連線及解碼。
 - **分開記錄線路健康度**：直接連線、香港及日本中轉各自計算表現，避免某一連線地區失敗後誤傷其他地區。
-- **同步頻道標誌**：更新香港頻道標誌，並加入 SVG 支援，改善國際頻道標誌缺失或仍顯示舊版嘅情況。
+- **完整同步頻道標誌**：補齊中國及國際頻道標誌；將外站限流、失效連結及舊裝置難以載入嘅 SVG 統一改用 Aulama 同源 PNG，與網頁版保持一致。
 
 ## 新版介面
 
@@ -54,7 +54,7 @@
 
 | 平台 | 正式版本 | 下載 |
 | --- | --- | --- |
-| Android TV／Google TV | `2.6.16-family` | [下載 APK](https://github.com/siumiu1968/Aulama_TV/releases/download/v2.6.16-family/mytv-android-tv-2.6.16-family-all-sdk21.apk) |
+| Android TV／Google TV | `2.6.17-family` | [下載 APK](https://github.com/siumiu1968/Aulama_TV/releases/download/v2.6.17-family/mytv-android-tv-2.6.17-family-all-sdk21.apk) |
 | Android 手機 | `1.1.3` | [下載 APK](https://github.com/siumiu1968/Aulama_TV/releases/tag/android-v1.1.3) |
 | 網頁版 | 最新版 | [開啟 Aulama IPTV](https://aulama.org/iptv/) |
 
