@@ -39,7 +39,10 @@ internal fun playbackHealthIssue(
     hasObservedOutputFps: Boolean,
     hasObservedDecodeFps: Boolean,
     avDifferenceSeconds: Float = Float.NaN,
+    playbackExpectedButStopped: Boolean = false,
 ): IJKPlaybackHealthIssue? {
+    if (playbackExpectedButStopped) return IJKPlaybackHealthIssue.STALLED
+
     val outputFpsAvailableNow = outputFps.isFinite() && outputFps > 0f
     val decodeFpsAvailableNow = decodeFps.isFinite() && decodeFps > 0f
     val hasHealthyFpsEvidence =
@@ -77,6 +80,7 @@ internal fun isPlaybackHealthUnhealthy(
     hasObservedOutputFps: Boolean,
     hasObservedDecodeFps: Boolean,
     avDifferenceSeconds: Float = Float.NaN,
+    playbackExpectedButStopped: Boolean = false,
 ): Boolean {
     return playbackHealthIssue(
         outputFps = outputFps,
@@ -86,6 +90,7 @@ internal fun isPlaybackHealthUnhealthy(
         hasObservedOutputFps = hasObservedOutputFps,
         hasObservedDecodeFps = hasObservedDecodeFps,
         avDifferenceSeconds = avDifferenceSeconds,
+        playbackExpectedButStopped = playbackExpectedButStopped,
     ) != null
 }
 
@@ -240,10 +245,13 @@ class IJKVideoPlayer(
             var hasObservedDecodeFps = false
             while (!playbackHealthReported) {
                 delay(3_000L)
-                if (!ijkPlayer.isPlaying) {
+                if (!canStartPlayback) {
                     badSamples = 0
+                    previousIssue = null
+                    previousPosition = ijkPlayer.currentPosition
                     continue
                 }
+                val isPlaying = ijkPlayer.isPlaying
                 val outputFps = ijkPlayer.videoOutputFramesPerSecond
                 val decodeFps = ijkPlayer.videoDecodeFramesPerSecond
                 val avDifference = ijkPlayer.avDifference
@@ -258,6 +266,7 @@ class IJKVideoPlayer(
                     hasObservedOutputFps = hasObservedOutputFps,
                     hasObservedDecodeFps = hasObservedDecodeFps,
                     avDifferenceSeconds = avDifference,
+                    playbackExpectedButStopped = !isPlaying,
                 )
                 hasObservedOutputFps = hasObservedOutputFps ||
                     (outputFps.isFinite() && outputFps > 0f)
@@ -272,6 +281,7 @@ class IJKVideoPlayer(
                         "Playback health low (${issue.reasonCode}): outputFps=$outputFps, " +
                         "decodeFps=$decodeFps, progressDelta=$progressDelta, " +
                             "avDifference=$avDifference, " +
+                            "isPlaying=$isPlaying, " +
                             "outputTelemetry=$hasObservedOutputFps, " +
                             "decodeTelemetry=$hasObservedDecodeFps, samples=$badSamples",
                     )
@@ -283,6 +293,10 @@ class IJKVideoPlayer(
                 }
             }
         }
+    }
+
+    override fun restartPlaybackHealthMonitoring() {
+        startPlaybackHealthMonitor()
     }
     
     private val playerListener = object : IMediaPlayer.OnPreparedListener,

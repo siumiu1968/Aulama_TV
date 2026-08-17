@@ -65,8 +65,17 @@ private const val SAME_CANDIDATE_RELOAD_COOLDOWN_MS = 120_000L
 private const val SAME_CANDIDATE_RELOAD_DELAY_MS = 260L
 private val SUPER_ADMIN_TRANSPORT_IDS = listOf("hk_relay", "jp_relay", "direct")
 
-internal fun isFirstFrameTimeoutDegradation(reason: String): Boolean =
-    reason == IptvPlaybackHealthPolicy.reasonCode(IptvDegradationReason.FirstFrameTimeout)
+internal fun requiresImmediatePlaybackRecovery(reason: String): Boolean = when (reason) {
+    IptvPlaybackHealthPolicy.reasonCode(IptvDegradationReason.FirstFrameTimeout),
+    IptvPlaybackHealthPolicy.reasonCode(IptvDegradationReason.LongRebuffer),
+    "slow-rendering",
+    "dropped-frames",
+    "audio-underrun",
+    "ijk-playback-stalled",
+    "ijk-decode-stalled",
+    "ijk-slow-rendering" -> true
+    else -> false
+}
 
 @Stable
 class MainContentState(
@@ -227,12 +236,12 @@ class MainContentState(
             if (lastFailureHandledKey == failedHealthKey) return@onPlaybackDegraded
             lastFailureHandledKey = failedHealthKey
             finishCurrentWatchSession()
-            val isFirstFrameTimeout = isFirstFrameTimeoutDegradation(reason)
+            val mustRecover = requiresImmediatePlaybackRecovery(reason)
             if (
-                isFirstFrameTimeout &&
+                mustRecover &&
                 scheduleSameCandidateReload(failedHealthKey)
             ) {
-                Snackbar.show("播放有波動，原線重試中")
+                Snackbar.show("播放停頓，原線重試中")
                 return@onPlaybackDegraded
             }
 
@@ -241,12 +250,17 @@ class MainContentState(
                 settingsViewModel.iptvPlayableHostList -= getUrlHost(failedRoute.url)
             }
 
-            if (playNextRoute(forceSwitch = isFirstFrameTimeout)) {
+            if (playNextRoute(forceSwitch = mustRecover)) {
                 val nextRoute = currentRouteOrNull()
                 val target = nextRoute?.quality?.label ?: "後備"
                 Snackbar.show("畫面播放唔順，已自動切換${target}線路")
                 log.w("線路播放質素下降（$reason），自動切換：${failedRoute.url}")
+            } else if (mustRecover) {
+                Snackbar.show("未有後備線路，已重新載入目前線路")
+                log.w("播放停頓（$reason），未有後備線路，重新載入：${failedRoute.url}")
+                prepareCurrentRoute(retrying = true)
             } else {
+                lastFailureHandledKey = null
                 videoPlayerState.keepCurrentRoute()
                 Snackbar.show("未有明顯更佳線路，暫時保留目前播放")
                 log.w("線路播放質素下降（$reason），後備線路未高出 20 分：${failedRoute.url}")

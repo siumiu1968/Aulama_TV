@@ -314,7 +314,6 @@ class Media3VideoPlayer(
 
         override fun onPlaybackStateChanged(playbackState: Int) {
             if (playbackState == Player.STATE_BUFFERING) {
-                triggerError(null)
                 triggerBuffering(true)
             } else if (playbackState == Player.STATE_READY) {
                 triggerReady()
@@ -351,6 +350,8 @@ class Media3VideoPlayer(
 
     private fun startPlaybackHealthMonitor() {
         playbackHealthJob?.cancel()
+        playbackHealthReported = false
+        recentAudioUnderruns.clear()
         playbackHealthJob = coroutineScope.launch {
             delay(5_000L)
             val counters = videoPlayer.videoDecoderCounters ?: return@launch
@@ -388,6 +389,10 @@ class Media3VideoPlayer(
                 }
             }
         }
+    }
+
+    override fun restartPlaybackHealthMonitoring() {
+        startPlaybackHealthMonitor()
     }
 
     private val metadataListener = object : AnalyticsListener {

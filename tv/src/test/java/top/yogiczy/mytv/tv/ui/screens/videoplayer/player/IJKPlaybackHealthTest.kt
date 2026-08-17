@@ -90,6 +90,21 @@ class IJKPlaybackHealthTest {
     }
 
     @Test
+    fun `foreground playback that stopped is unhealthy despite stale fps telemetry`() {
+        assertTrue(
+            isPlaybackHealthUnhealthy(
+                outputFps = 25f,
+                decodeFps = 25f,
+                progressDelta = 0L,
+                minimumFps = 8f,
+                hasObservedOutputFps = true,
+                hasObservedDecodeFps = true,
+                playbackExpectedButStopped = true,
+            ),
+        )
+    }
+
+    @Test
     fun `stalled live timeline stays healthy while decode and output fps are healthy`() {
         assertFalse(
             isPlaybackHealthUnhealthy(

@@ -31,6 +31,8 @@ abstract class VideoPlayer(
 
     abstract fun pause()
 
+    open fun restartPlaybackHealthMonitoring() = Unit
+
     open fun setPlaybackAllowed(allowed: Boolean) {
         canStartPlayback = allowed
         if (!allowed) pause()

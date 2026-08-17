@@ -83,13 +83,13 @@ internal fun playbackModeFallbackCandidates(
 } else {
     when (currentMode) {
         IptvPlaybackMode.IJK -> listOf(
-            IptvPlaybackMode.IJK_SOFTWARE,
             IptvPlaybackMode.MEDIA3,
+            IptvPlaybackMode.IJK_SOFTWARE,
         )
 
         IptvPlaybackMode.IJK_SOFTWARE -> listOf(
-            IptvPlaybackMode.IJK,
             IptvPlaybackMode.MEDIA3,
+            IptvPlaybackMode.IJK,
         )
 
         IptvPlaybackMode.MEDIA3 -> listOf(
@@ -129,7 +129,6 @@ class VideoPlayerState(
     private var currentFirstFrameTimeoutMs = IptvPlaybackHealthPolicy.firstFrameTimeoutMs
     private var degradedReported = false
     private var isAppForeground = false
-    private val recentRebuffers = mutableListOf<Long>()
     /** 顯示模式 */
     var displayMode by mutableStateOf(defaultDisplayModeProvider())
 
@@ -208,7 +207,6 @@ class VideoPlayerState(
         playbackGeneration += 1
         currentFirstFrameTimeoutMs = firstFrameTimeoutMs.coerceAtLeast(1_000L)
         resetPlaybackHealthWindow()
-        recentRebuffers.clear()
         degradedReported = false
         currentRoute = route
         val mode = selectPlaybackMode(route, preferredPlaybackMode)
@@ -234,7 +232,12 @@ class VideoPlayerState(
     fun setAppForeground(foreground: Boolean) {
         isAppForeground = foreground
         instance.setPlaybackAllowed(foreground)
-        if (foreground && currentRoute != null) instance.play()
+        if (foreground && currentRoute != null) {
+            instance.play()
+            if (isBuffering && hasRenderedFirstFrame) scheduleLongRebufferEvaluation()
+        } else {
+            bufferingHealthJob?.cancel()
+        }
     }
 
     fun seekTo(position: Long) {
@@ -246,7 +249,6 @@ class VideoPlayerState(
         bufferingHealthJob?.cancel()
         firstFrameHealthJob?.cancel()
         ratioHealthJob?.cancel()
-        recentRebuffers.clear()
         hasRenderedFirstFrame = false
         isBuffering = false
         error = null
@@ -264,6 +266,24 @@ class VideoPlayerState(
     fun keepCurrentRoute() {
         retryMessage = null
         error = null
+        if (!hasRenderedFirstFrame) return
+
+        degradedReported = false
+        val now = System.currentTimeMillis()
+        playbackHealthWindow = IptvPlaybackHealthPolicy.onFirstFrame(
+            IptvPlaybackHealthPolicy.start(now),
+            now,
+        )
+        if (isBuffering) {
+            playbackHealthWindow = IptvPlaybackHealthPolicy.onBuffering(
+                playbackHealthWindow,
+                buffering = true,
+                nowMs = now,
+            )
+            scheduleLongRebufferEvaluation()
+        }
+        scheduleBufferRatioEvaluation()
+        instance.restartPlaybackHealthMonitoring()
     }
 
     fun setVideoSurfaceView(surfaceView: SurfaceView) {
@@ -329,7 +349,9 @@ class VideoPlayerState(
     private fun reportHealthDegradation(reason: IptvDegradationReason) {
         reportPlaybackDegraded(
             reason = IptvPlaybackHealthPolicy.reasonCode(reason),
-            allowPlaybackModeFallback = currentRoute?.quality == ChannelQuality.UHD_4K,
+            allowPlaybackModeFallback = reason == IptvDegradationReason.FirstFrameTimeout ||
+                reason == IptvDegradationReason.LongRebuffer ||
+                currentRoute?.quality == ChannelQuality.UHD_4K,
         )
     }
 
@@ -365,6 +387,29 @@ class VideoPlayerState(
         }
     }
 
+    private fun scheduleLongRebufferEvaluation() {
+        bufferingHealthJob?.cancel()
+        if (!isAppForeground || !isBuffering || !hasRenderedFirstFrame || degradedReported) return
+
+        val generation = playbackGeneration
+        bufferingHealthJob = coroutineScope.launch {
+            delay(IptvPlaybackHealthPolicy.longRebufferTimeoutMs)
+            if (
+                generation != playbackGeneration ||
+                !isAppForeground ||
+                !isBuffering ||
+                !hasRenderedFirstFrame ||
+                degradedReported
+            ) return@launch
+
+            IptvPlaybackHealthPolicy.evaluate(
+                playbackHealthWindow,
+                System.currentTimeMillis(),
+                currentFirstFrameTimeoutMs,
+            )?.let(::reportHealthDegradation)
+        }
+    }
+
     private fun tryPlaybackModeFallback(): Boolean {
         val route = currentRoute ?: return false
         val candidates = playbackModeFallbackCandidates(route.quality, playbackMode)
@@ -380,7 +425,6 @@ class VideoPlayerState(
         playbackGeneration += 1
         bufferingHealthJob?.cancel()
         resetPlaybackHealthWindow()
-        recentRebuffers.clear()
         degradedReported = false
         hasRenderedFirstFrame = false
         isBuffering = true
@@ -551,6 +595,7 @@ class VideoPlayerState(
         instance.onBuffering {
             isBuffering = it
             if (it) error = null
+            if (!it) bufferingHealthJob?.cancel()
             val now = System.currentTimeMillis()
             playbackHealthWindow = IptvPlaybackHealthPolicy.onBuffering(
                 playbackHealthWindow,
@@ -563,9 +608,13 @@ class VideoPlayerState(
                 currentFirstFrameTimeoutMs,
             )
                 ?.let(::reportHealthDegradation)
+            if (it && hasRenderedFirstFrame && !degradedReported) {
+                scheduleLongRebufferEvaluation()
+            }
         }
         instance.onPrepared { }
         instance.onFirstFrame {
+            bufferingHealthJob?.cancel()
             firstFrameHealthJob?.cancel()
             playbackHealthWindow = IptvPlaybackHealthPolicy.onFirstFrame(
                 playbackHealthWindow,

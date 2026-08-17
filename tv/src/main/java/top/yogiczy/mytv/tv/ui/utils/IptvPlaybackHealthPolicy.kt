@@ -12,6 +12,7 @@ internal data class IptvPlaybackHealthWindow(
 
 internal sealed interface IptvDegradationReason {
     data object FirstFrameTimeout : IptvDegradationReason
+    data object LongRebuffer : IptvDegradationReason
     data object RepeatedStalls : IptvDegradationReason
     data class ExcessiveBuffering(val ratio: Double) : IptvDegradationReason
 }
@@ -20,6 +21,7 @@ internal object IptvPlaybackHealthPolicy {
     const val firstFrameTimeoutMs = 12_000L
     const val fourKFirstFrameTimeoutMs = 15_000L
     const val relayFirstFrameTimeoutMs = 30_000L
+    const val longRebufferTimeoutMs = 12_000L
     const val stallWindowMs = 45_000L
     const val stallThreshold = 3
     const val bufferRatioWindowMs = 60_000L
@@ -95,14 +97,17 @@ internal object IptvPlaybackHealthPolicy {
                 nowMs - state.attemptStartedAtMs >= firstFrameDeadlineMs
             }
         }
+        val activeBufferMs = state.stallStartedAtMs
+            ?.let { (nowMs - it).coerceAtLeast(0L) }
+            ?: 0L
+        if (activeBufferMs >= longRebufferTimeoutMs) {
+            return IptvDegradationReason.LongRebuffer
+        }
         val stalls = state.stallTimestampsMs.count { nowMs - it <= stallWindowMs }
         if (stalls >= stallThreshold) return IptvDegradationReason.RepeatedStalls
 
         val playbackMs = (nowMs - firstFrameAt).coerceAtLeast(0L)
         if (playbackMs < bufferRatioWindowMs) return null
-        val activeBufferMs = state.stallStartedAtMs
-            ?.let { (nowMs - it).coerceAtLeast(0L) }
-            ?: 0L
         val ratio = (state.completedBufferMs + activeBufferMs).toDouble() / playbackMs
         return IptvDegradationReason.ExcessiveBuffering(ratio).takeIf {
             ratio > bufferRatioThreshold
@@ -111,6 +116,7 @@ internal object IptvPlaybackHealthPolicy {
 
     fun reasonCode(reason: IptvDegradationReason): String = when (reason) {
         IptvDegradationReason.FirstFrameTimeout -> "first-frame-timeout"
+        IptvDegradationReason.LongRebuffer -> "long-rebuffer"
         IptvDegradationReason.RepeatedStalls -> "stall-threshold"
         is IptvDegradationReason.ExcessiveBuffering ->
             "buffer-ratio:${"%.3f".format(java.util.Locale.US, reason.ratio)}"

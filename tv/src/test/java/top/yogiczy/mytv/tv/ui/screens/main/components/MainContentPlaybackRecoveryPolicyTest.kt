@@ -6,11 +6,20 @@ import org.junit.Test
 
 class MainContentPlaybackRecoveryPolicyTest {
     @Test
-    fun `only first frame timeout forces startup recovery`() {
-        assertTrue(isFirstFrameTimeoutDegradation("first-frame-timeout"))
-        assertFalse(isFirstFrameTimeoutDegradation("stall-threshold"))
-        assertFalse(isFirstFrameTimeoutDegradation("buffer-ratio:0.200"))
-        assertFalse(isFirstFrameTimeoutDegradation("audio-underrun"))
-        assertFalse(isFirstFrameTimeoutDegradation("ijk-slow-rendering"))
+    fun `hard playback stalls force recovery`() {
+        assertTrue(requiresImmediatePlaybackRecovery("first-frame-timeout"))
+        assertTrue(requiresImmediatePlaybackRecovery("long-rebuffer"))
+        assertTrue(requiresImmediatePlaybackRecovery("ijk-playback-stalled"))
+        assertTrue(requiresImmediatePlaybackRecovery("ijk-decode-stalled"))
+        assertTrue(requiresImmediatePlaybackRecovery("slow-rendering"))
+        assertTrue(requiresImmediatePlaybackRecovery("dropped-frames"))
+        assertTrue(requiresImmediatePlaybackRecovery("audio-underrun"))
+    }
+
+    @Test
+    fun `statistical buffering only switches to a clearly better route`() {
+        assertFalse(requiresImmediatePlaybackRecovery("stall-threshold"))
+        assertFalse(requiresImmediatePlaybackRecovery("buffer-ratio:0.200"))
+        assertFalse(requiresImmediatePlaybackRecovery("ijk-av-sync-drift"))
     }
 }

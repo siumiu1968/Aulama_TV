@@ -72,6 +72,21 @@ class IptvPlaybackHealthPolicyTest {
     }
 
     @Test
+    fun `continuous buffering triggers recovery after twelve seconds`() {
+        var state = IptvPlaybackHealthPolicy.onFirstFrame(
+            IptvPlaybackHealthPolicy.start(0L),
+            1_000L,
+        )
+        state = IptvPlaybackHealthPolicy.onBuffering(state, true, 10_000L)
+
+        assertNull(IptvPlaybackHealthPolicy.evaluate(state, 21_999L))
+        assertEquals(
+            IptvDegradationReason.LongRebuffer,
+            IptvPlaybackHealthPolicy.evaluate(state, 22_000L),
+        )
+    }
+
+    @Test
     fun `buffer ratio requires sixty second window and more than fifteen percent`() {
         var state = IptvPlaybackHealthPolicy.onFirstFrame(
             IptvPlaybackHealthPolicy.start(0L),

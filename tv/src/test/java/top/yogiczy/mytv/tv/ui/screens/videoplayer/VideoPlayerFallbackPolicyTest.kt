@@ -92,4 +92,12 @@ class VideoPlayerFallbackPolicyTest {
             ),
         )
     }
+
+    @Test
+    fun `non 4K IJK stall changes engine before trying software decode`() {
+        assertEquals(
+            listOf(IptvPlaybackMode.MEDIA3, IptvPlaybackMode.IJK_SOFTWARE),
+            playbackModeFallbackCandidates(ChannelQuality.FULL_HD, IptvPlaybackMode.IJK),
+        )
+    }
 }
