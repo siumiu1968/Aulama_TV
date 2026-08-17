@@ -478,6 +478,7 @@ class Media3VideoPlayer(
 
     override fun release() {
         playbackHealthJob?.cancel()
+        updatePositionJob?.cancel()
         videoPlayer.removeListener(playerListener)
         videoPlayer.removeAnalyticsListener(metadataListener)
         videoPlayer.removeAnalyticsListener(eventLogger)

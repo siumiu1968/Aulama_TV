@@ -38,6 +38,7 @@ import top.yogiczy.mytv.tv.ui.screens.settings.SettingsViewModel
 import top.yogiczy.mytv.tv.ui.screens.videoplayer.VideoPlayerState
 import top.yogiczy.mytv.tv.ui.screens.videoplayer.rememberVideoPlayerState
 import top.yogiczy.mytv.tv.ui.utils.IptvDisplayCapabilities
+import top.yogiczy.mytv.tv.ui.utils.IptvDegradationReason
 import top.yogiczy.mytv.tv.ui.utils.IptvPlaybackHealthPolicy
 import top.yogiczy.mytv.tv.ui.utils.IptvPlaybackMode
 import top.yogiczy.mytv.tv.ui.utils.IptvRouteHealthStore
@@ -63,6 +64,9 @@ private const val RELAY_RESOLUTION_TIMEOUT_MS = 4_000L
 private const val SAME_CANDIDATE_RELOAD_COOLDOWN_MS = 120_000L
 private const val SAME_CANDIDATE_RELOAD_DELAY_MS = 260L
 private val SUPER_ADMIN_TRANSPORT_IDS = listOf("hk_relay", "jp_relay", "direct")
+
+internal fun isFirstFrameTimeoutDegradation(reason: String): Boolean =
+    reason == IptvPlaybackHealthPolicy.reasonCode(IptvDegradationReason.FirstFrameTimeout)
 
 @Stable
 class MainContentState(
@@ -223,7 +227,11 @@ class MainContentState(
             if (lastFailureHandledKey == failedHealthKey) return@onPlaybackDegraded
             lastFailureHandledKey = failedHealthKey
             finishCurrentWatchSession()
-            if (scheduleSameCandidateReload(failedHealthKey)) {
+            val isFirstFrameTimeout = isFirstFrameTimeoutDegradation(reason)
+            if (
+                isFirstFrameTimeout &&
+                scheduleSameCandidateReload(failedHealthKey)
+            ) {
                 Snackbar.show("播放有波動，原線重試中")
                 return@onPlaybackDegraded
             }
@@ -233,7 +241,7 @@ class MainContentState(
                 settingsViewModel.iptvPlayableHostList -= getUrlHost(failedRoute.url)
             }
 
-            if (playNextRoute(forceSwitch = true)) {
+            if (playNextRoute(forceSwitch = isFirstFrameTimeout)) {
                 val nextRoute = currentRouteOrNull()
                 val target = nextRoute?.quality?.label ?: "後備"
                 Snackbar.show("畫面播放唔順，已自動切換${target}線路")
