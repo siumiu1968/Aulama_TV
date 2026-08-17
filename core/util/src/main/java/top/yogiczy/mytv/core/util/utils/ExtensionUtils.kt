@@ -34,7 +34,23 @@ fun String.compareVersion(version2: String): Int {
         if (label1 == null) return 1
         if (label2 == null) return -1
 
-        return label1.compareTo(label2)
+        val parts1 = label1.split(".")
+        val parts2 = label2.split(".")
+        for (i in 0 until maxOf(parts1.size, parts2.size)) {
+            val part1 = parts1.getOrNull(i) ?: return -1
+            val part2 = parts2.getOrNull(i) ?: return 1
+            if (part1 == part2) continue
+
+            val number1 = part1.toIntOrNull()
+            val number2 = part2.toIntOrNull()
+            return when {
+                number1 != null && number2 != null -> number1.compareTo(number2)
+                number1 != null -> -1
+                number2 != null -> 1
+                else -> part1.compareTo(part2)
+            }
+        }
+        return 0
     }
 
     val (v1, preRelease1) = parseVersion(this) ?: return 0
