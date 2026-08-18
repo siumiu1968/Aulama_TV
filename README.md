@@ -9,13 +9,21 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/siumiu1968/Aulama_TV/releases/tag/v2.6.18-family"><img src="https://img.shields.io/github/v/release/siumiu1968/Aulama_TV?display_name=tag&label=Android%20TV&color=2383e2" alt="Android TV release" /></a>
+  <a href="https://github.com/siumiu1968/Aulama_TV/releases/tag/v2.6.19-family"><img src="https://img.shields.io/github/v/release/siumiu1968/Aulama_TV?display_name=tag&label=Android%20TV&color=2383e2" alt="Android TV release" /></a>
   <a href="https://github.com/siumiu1968/Aulama_TV/releases"><img src="https://img.shields.io/github/downloads/siumiu1968/Aulama_TV/total?label=downloads" alt="Downloads" /></a>
   <a href="https://apilevels.com/"><img src="https://img.shields.io/badge/Android-5.0%2B-3ddc84?logo=android" alt="Android 5.0+" /></a>
   <a href="./LICENSE"><img src="https://img.shields.io/github/license/siumiu1968/Aulama_TV" alt="MIT License" /></a>
 </p>
 
-> 目前正式版本：Android TV `2.6.18-family`、Android 手機 `1.1.3`。
+> 目前正式版本：Android TV `2.6.19-family`、Android 手機 `1.1.3`。
+
+## 2.6.19 更新重點
+
+- **卡死自動恢復**：直播連續緩衝約 12 秒後會主動自救，唔再長時間停喺無聲定格畫面。
+- **統一恢復次序**：依次嘗試換解碼引擎、同線重載、切換後備線，冇後備時重載原線。
+- **修正 IJK 漏報**：播放器停止輸出但殘留 FPS 數據時，仍可正確判斷播放卡死。
+- **修正 Media3 監察**：正常緩衝唔會再錯誤重設首幀狀態或取消載入逾時。
+- **減少反覆重開**：短暫波動保持保守處理，同時重新啟動健康監察，避免永久失去自救。
 
 ## 2.6.18 更新重點
 
@@ -60,7 +68,7 @@
 
 | 平台 | 正式版本 | 下載 |
 | --- | --- | --- |
-| Android TV／Google TV | `2.6.18-family` | [下載 APK](https://github.com/siumiu1968/Aulama_TV/releases/download/v2.6.18-family/mytv-android-tv-2.6.18-family-all-sdk21.apk) |
+| Android TV／Google TV | `2.6.19-family` | [下載 APK](https://github.com/siumiu1968/Aulama_TV/releases/download/v2.6.19-family/mytv-android-tv-2.6.19-family-all-sdk21.apk) |
 | Android 手機 | `1.1.3` | [下載 APK](https://github.com/siumiu1968/Aulama_TV/releases/tag/android-v1.1.3) |
 | 網頁版 | 最新版 | [開啟 Aulama IPTV](https://aulama.org/iptv/) |
 
