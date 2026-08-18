@@ -41,6 +41,36 @@ class GithubGitReleaseParserTest {
     }
 
     @Test
+    fun releaseWithAbiSplitsPrefersUniversalApkForAutomaticUpdate() = runBlocking {
+        val release = parser.parse(
+            """
+            {
+              "tag_name": "v2.7.0-family",
+              "draft": false,
+              "assets": [
+                {
+                  "name": "mytv-android-tv-2.7.0-family-arm64-v8a-sdk21.apk",
+                  "browser_download_url": "https://example.com/arm64.apk"
+                },
+                {
+                  "name": "mytv-android-tv-2.7.0-family-all-sdk21.apk",
+                  "browser_download_url": "https://example.com/universal.apk",
+                  "digest": "sha256:universal"
+                },
+                {
+                  "name": "mytv-android-tv-2.7.0-family-armeabi-v7a-sdk21.apk",
+                  "browser_download_url": "https://example.com/arm32.apk"
+                }
+              ]
+            }
+            """.trimIndent(),
+        )
+
+        assertEquals("https://example.com/universal.apk", release.downloadUrl)
+        assertEquals("universal", release.sha256)
+    }
+
+    @Test
     fun latestMobileObjectIsRejectedWithoutParsingItsTagAsVersion() {
         val error = runCatching {
             runBlocking {

@@ -67,13 +67,18 @@ class GithubGitReleaseParser : GitReleaseParser {
 
     private fun findTvApk(release: JsonObject): JsonObject? {
         val assets = release["assets"]?.jsonArray.orEmpty().map { it.jsonObject }
-        return assets.firstOrNull {
+        val tvApks = assets.filter {
             val name = it["name"]?.jsonPrimitive?.content.orEmpty().lowercase()
             name.endsWith(".apk") &&
                 ("android-tv" in name || "mytv-tv" in name)
-        } ?: assets.firstOrNull {
-            val name = it["name"]?.jsonPrimitive?.content.orEmpty().lowercase()
-            name.endsWith(".apk") && "mobile" !in name
         }
+        return tvApks.firstOrNull {
+            val name = it["name"]?.jsonPrimitive?.content.orEmpty().lowercase()
+            "-all-" in name || "-universal-" in name
+        } ?: tvApks.firstOrNull()
+            ?: assets.firstOrNull {
+                val name = it["name"]?.jsonPrimitive?.content.orEmpty().lowercase()
+                name.endsWith(".apk") && "mobile" !in name
+            }
     }
 }

@@ -82,20 +82,27 @@ jobs:
             if [ $? -ne 0 ]; then exit 1; fi
           done
 
-      # 7. 定位 APK 文件
-      - name: Locate APK
-        id: apk
+      # 7. 核對通用、64 位元及 32 位元 APK
+      - name: Locate APKs
         run: |
-          apk_path=$(find tv/build/outputs/apk/release -name 'mytv-android-tv-*.apk' | head -n1)
-          [ -z "$apk_path" ] && { echo "❌ APK not found"; exit 1; }
-          echo "Found APK: $apk_path"
-          echo "apk_path=$apk_path" >> $GITHUB_OUTPUT
+          shopt -s nullglob
+          apks=(tv/build/outputs/apk/release/mytv-android-tv-*.apk)
+          [ "${#apks[@]}" -eq 3 ] || { echo "❌ Expected 3 APKs, found ${#apks[@]}"; exit 1; }
+          for suffix in all arm64-v8a armeabi-v7a; do
+            compgen -G "tv/build/outputs/apk/release/mytv-android-tv-*-$suffix-sdk21.apk" > /dev/null || {
+              echo "❌ Missing $suffix APK"
+              exit 1
+            }
+          done
+          printf 'Found APK: %s\n' "${apks[@]}"
 
       # 8. 发布到 GitHub Release (自动创建或更新)
       - name: Upload Release Asset
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ steps.apk.outputs.apk_path }}
+          files: tv/build/outputs/apk/release/mytv-android-tv-*.apk
+          overwrite_files: true
+          fail_on_unmatched_files: true
           tag_name: ${{ env.TAG }}
           name: ${{ env.TAG }}
           draft: false

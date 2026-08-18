@@ -23,6 +23,7 @@
 - **播放與選線全面優化**：加入本機網絡經驗、高清優先探測、有界回訪、穩播緩衝及 4K 慢源兼容，減少錯誤降畫質及長時間黑畫。
 - **更新流程更可靠**：已下載安裝包可直接重開系統安裝頁，並自動清理殘缺、舊版及安裝完成檔案。
 - **介面細節改善**：字幕改為白字黑邊、配對頁加入 Aulama ID Logo，設定頁焦點及圓角亦已修正。
+- **按裝置架構下載**：正式版同時提供 Universal、arm64-v8a 及 armeabi-v7a APK，三款版本內容及版本號完全一致。
 
 ## 2.6.20 Beta 5 測試重點
 
@@ -115,7 +116,9 @@
 | 平台 | 版本 | 下載 |
 | --- | --- | --- |
 | Android TV／Google TV 測試版 | `2.6.20-beta.5` | [下載 Beta APK](https://github.com/siumiu1968/Aulama_TV/releases/download/v2.6.20-beta.5/mytv-android-tv-2.6.20-beta.5-all-sdk21.apk) |
-| Android TV／Google TV | `2.7.0-family` | [下載 APK](https://github.com/siumiu1968/Aulama_TV/releases/download/v2.7.0-family/mytv-android-tv-2.7.0-family-all-sdk21.apk) |
+| Android TV／Google TV（通用版） | `2.7.0-family` | [下載 Universal APK](https://github.com/siumiu1968/Aulama_TV/releases/download/v2.7.0-family/mytv-android-tv-2.7.0-family-all-sdk21.apk) |
+| Android TV／Google TV（64 位元） | `2.7.0-family` | [下載 arm64-v8a APK](https://github.com/siumiu1968/Aulama_TV/releases/download/v2.7.0-family/mytv-android-tv-2.7.0-family-arm64-v8a-sdk21.apk) |
+| Android TV／Google TV（32 位元） | `2.7.0-family` | [下載 armeabi-v7a APK](https://github.com/siumiu1968/Aulama_TV/releases/download/v2.7.0-family/mytv-android-tv-2.7.0-family-armeabi-v7a-sdk21.apk) |
 | Android 手機 | `1.1.3` | [下載 APK](https://github.com/siumiu1968/Aulama_TV/releases/tag/android-v1.1.3) |
 | 網頁版 | 最新版 | [開啟 Aulama IPTV](https://aulama.org/iptv/) |
 
