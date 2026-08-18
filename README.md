@@ -9,13 +9,13 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/siumiu1968/Aulama_TV/releases/tag/v2.6.19-family"><img src="https://img.shields.io/github/v/release/siumiu1968/Aulama_TV?display_name=tag&label=Android%20TV&color=2383e2" alt="Android TV release" /></a>
+  <a href="https://github.com/siumiu1968/Aulama_TV/releases/tag/v2.6.20-family"><img src="https://img.shields.io/github/v/release/siumiu1968/Aulama_TV?display_name=tag&label=Android%20TV&color=2383e2" alt="Android TV release" /></a>
   <a href="https://github.com/siumiu1968/Aulama_TV/releases"><img src="https://img.shields.io/github/downloads/siumiu1968/Aulama_TV/total?label=downloads" alt="Downloads" /></a>
   <a href="https://apilevels.com/"><img src="https://img.shields.io/badge/Android-5.0%2B-3ddc84?logo=android" alt="Android 5.0+" /></a>
   <a href="./LICENSE"><img src="https://img.shields.io/github/license/siumiu1968/Aulama_TV" alt="MIT License" /></a>
 </p>
 
-> 目前正式版本：Android TV `2.6.19-family`、Android 手機 `1.1.3`；Android TV 最新測試版為 `2.6.20-beta.5`。
+> 目前正式版本：Android TV `2.6.20-family`、Android 手機 `1.1.3`；Android TV 最新測試版為 `2.6.20-beta.5`。
 
 ## 2.6.20 Beta 5 測試重點
 
@@ -108,7 +108,7 @@
 | 平台 | 版本 | 下載 |
 | --- | --- | --- |
 | Android TV／Google TV 測試版 | `2.6.20-beta.5` | [下載 Beta APK](https://github.com/siumiu1968/Aulama_TV/releases/download/v2.6.20-beta.5/mytv-android-tv-2.6.20-beta.5-all-sdk21.apk) |
-| Android TV／Google TV | `2.6.19-family` | [下載 APK](https://github.com/siumiu1968/Aulama_TV/releases/download/v2.6.19-family/mytv-android-tv-2.6.19-family-all-sdk21.apk) |
+| Android TV／Google TV | `2.6.20-family` | [下載 APK](https://github.com/siumiu1968/Aulama_TV/releases/download/v2.6.20-family/mytv-android-tv-2.6.20-family-all-sdk21.apk) |
 | Android 手機 | `1.1.3` | [下載 APK](https://github.com/siumiu1968/Aulama_TV/releases/tag/android-v1.1.3) |
 | 網頁版 | 最新版 | [開啟 Aulama IPTV](https://aulama.org/iptv/) |
 
