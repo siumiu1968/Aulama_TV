@@ -2,6 +2,7 @@ package top.yogiczy.mytv.tv.ui.screens.account
 
 import android.os.SystemClock
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -26,6 +27,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.Button
@@ -33,6 +35,7 @@ import androidx.tv.material3.ButtonDefaults
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import kotlinx.coroutines.delay
+import top.yogiczy.mytv.tv.R
 import top.yogiczy.mytv.tv.account.AulamaAccount
 import top.yogiczy.mytv.tv.account.AulamaAccountManager
 import top.yogiczy.mytv.tv.account.AulamaAccountState
@@ -81,10 +84,10 @@ internal fun DevicePairingScreen(
             ),
     ) {
         Column {
-            Text(
-                text = "Aulama ID",
-                style = MaterialTheme.typography.headlineMedium,
-                color = MaterialTheme.colorScheme.primary,
+            Image(
+                painter = painterResource(R.drawable.aulama_id_logo),
+                contentDescription = "Aulama ID",
+                modifier = Modifier.width(240.dp),
             )
             Text(
                 text = "用手機或網頁完成安全配對；唔登入亦可繼續睇電視。",

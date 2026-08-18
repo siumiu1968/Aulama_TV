@@ -15,7 +15,12 @@
   <a href="./LICENSE"><img src="https://img.shields.io/github/license/siumiu1968/Aulama_TV" alt="MIT License" /></a>
 </p>
 
-> 目前正式版本：Android TV `2.6.19-family`、Android 手機 `1.1.3`；Android TV 最新測試版為 `2.6.20-beta.4`。
+> 目前正式版本：Android TV `2.6.19-family`、Android 手機 `1.1.3`；Android TV 最新測試版為 `2.6.20-beta.5`。
+
+## 2.6.20 Beta 5 測試重點
+
+- **字幕畫面更清爽**：移除即時字幕背後嘅大幅半透明黑底，改為白字配黑色外框同輕微陰影，保留原有位置、大小及中英層次。
+- **配對頁加入品牌標誌**：Aulama ID 安全配對頁改用現有品牌 Logo，QR code、一次性配對碼及訪客操作流程保持不變。
 
 ## 2.6.20 Beta 4 測試重點
 
@@ -102,7 +107,7 @@
 
 | 平台 | 版本 | 下載 |
 | --- | --- | --- |
-| Android TV／Google TV 測試版 | `2.6.20-beta.4` | [下載 Beta APK](https://github.com/siumiu1968/Aulama_TV/releases/download/v2.6.20-beta.4/mytv-android-tv-2.6.20-beta.4-all-sdk21.apk) |
+| Android TV／Google TV 測試版 | `2.6.20-beta.5` | [下載 Beta APK](https://github.com/siumiu1968/Aulama_TV/releases/download/v2.6.20-beta.5/mytv-android-tv-2.6.20-beta.5-all-sdk21.apk) |
 | Android TV／Google TV | `2.6.19-family` | [下載 APK](https://github.com/siumiu1968/Aulama_TV/releases/download/v2.6.19-family/mytv-android-tv-2.6.19-family-all-sdk21.apk) |
 | Android 手機 | `1.1.3` | [下載 APK](https://github.com/siumiu1968/Aulama_TV/releases/tag/android-v1.1.3) |
 | 網頁版 | 最新版 | [開啟 Aulama IPTV](https://aulama.org/iptv/) |
