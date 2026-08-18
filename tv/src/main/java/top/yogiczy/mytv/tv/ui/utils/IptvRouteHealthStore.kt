@@ -38,6 +38,11 @@ enum class IptvPlaybackMode {
     MEDIA3,
 }
 
+internal fun preferredPlaybackModeAfterDegradation(
+    previousMode: String?,
+    reason: String,
+): String? = previousMode.takeUnless { reason == "first-frame-timeout" }
+
 /**
  * 長期分數只根據實際觀看結果學習；短期輕量 probe 由播放頁另外處理，唔會污染呢度。
  * 非冷卻線路先按畫質排序，再以成功率、啟動速度及近期表現選出同畫質最佳線路。
@@ -426,6 +431,13 @@ object IptvRouteHealthStore {
             failureCount = previous.failureCount + 1,
             consecutiveFailures = previous.consecutiveFailures + 1,
             lastFailureAt = now,
+            // This callback is reached only after the bounded same-route engine fallback
+            // is exhausted. Forget only this candidate's stale engine preference so the
+            // next pass can start from the normal 4K Media3 policy.
+            preferredPlaybackMode = preferredPlaybackModeAfterDegradation(
+                previous.preferredPlaybackMode,
+                reason,
+            ),
             successEwma = ewma(previous.successEwma, 0.25),
             bufferRatioEwma = ratio?.let { ewma(previous.bufferRatioEwma, it) }
                 ?: previous.bufferRatioEwma,

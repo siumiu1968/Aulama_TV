@@ -4,9 +4,32 @@ import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import top.yogiczy.mytv.core.data.entities.channel.CaptionIdentifiers
 import top.yogiczy.mytv.core.data.entities.channel.ChannelQuality
 
 class M3uIptvParserTest {
+    @Test
+    fun `matches web caption catalogue identifiers and keeps M3U language metadata`() = runBlocking {
+        val playlist = """
+            #EXTM3U
+            #EXTINF:-1 tvg-id="news.en" tvg-language="en-US" tvg-name="News" group-title="美國｜新聞",News 1080p
+            HTTPS://MEDIA.EXAMPLE.COM:443/live.m3u8
+        """.trimIndent()
+
+        val channel = M3uIptvParser().parse(playlist).first().channelList.first()
+
+        assertEquals("news.en", channel.tvgId)
+        assertEquals("en-US", channel.tvgLanguage)
+        assertEquals("international-channel-upvjru", channel.captionChannelId)
+        assertEquals("news.en", channel.routes.single().tvgId)
+        assertEquals("en-US", channel.routes.single().tvgLanguage)
+        assertEquals("route-7fioaj", channel.routes.single().captionRouteId)
+        assertEquals(
+            "https://media.example.com/live.m3u8",
+            CaptionIdentifiers.canonicalStreamUrl(channel.routes.single().url),
+        )
+    }
+
     @Test
     fun `merges routes into logical channels and preserves curated order`() = runBlocking {
         val playlist = """

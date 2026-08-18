@@ -11,6 +11,7 @@ import top.yogiczy.mytv.core.data.entities.iptvsource.IptvSource
 import top.yogiczy.mytv.core.data.entities.iptvsource.IptvSourceList
 import top.yogiczy.mytv.core.data.utils.Constants
 import top.yogiczy.mytv.core.data.utils.SP
+import top.yogiczy.mytv.tv.caption.LiveCaptionMode
 import top.yogiczy.mytv.tv.ui.screens.videoplayer.VideoPlayerDisplayMode
 
 /**
@@ -79,6 +80,9 @@ object Configs {
         IPTV_HYBRID_MODE,
 
         IPTV_CHANNEL_URL_INDEX,
+
+        /** 即時字幕顯示模式 */
+        IPTV_LIVE_CAPTION_MODE,
 
         /** ==================== 節目單 ==================== */
         /** 啓用節目單 */
@@ -248,6 +252,12 @@ object Configs {
             val jsonString = gson.toJson(value)
             SP.putString(KEY.IPTV_CHANNEL_URL_INDEX.name, jsonString)
         }
+
+    var liveCaptionMode: LiveCaptionMode
+        get() = LiveCaptionMode.fromStorageValue(
+            SP.getString(KEY.IPTV_LIVE_CAPTION_MODE.name, LiveCaptionMode.OFF.storageValue)
+        )
+        set(value) = SP.putString(KEY.IPTV_LIVE_CAPTION_MODE.name, value.storageValue)
 
 
     /** 直播源可播放host列表 */

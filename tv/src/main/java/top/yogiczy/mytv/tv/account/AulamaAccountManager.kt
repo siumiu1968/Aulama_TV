@@ -197,6 +197,9 @@ internal class AulamaAccountManager(
         }
     }
 
+    internal suspend fun accessToken(forceRefresh: Boolean = false): String? =
+        validAccessToken(forceRefresh)
+
     private suspend fun pollUntilAuthorized(initial: DevicePairingMachineState) {
         var machine = initial
         publishPairing(machine)

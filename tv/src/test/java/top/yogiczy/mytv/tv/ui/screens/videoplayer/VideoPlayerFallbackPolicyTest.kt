@@ -49,7 +49,7 @@ class VideoPlayerFallbackPolicyTest {
     }
 
     @Test
-    fun `unknown 4K starts Media3 then falls back once to hardware IJK`() {
+    fun `4K can try the other hardware player once regardless of learned start mode`() {
         assertEquals(
             IptvPlaybackMode.MEDIA3,
             selectPlaybackModeForRoute(
@@ -64,9 +64,20 @@ class VideoPlayerFallbackPolicyTest {
             listOf(IptvPlaybackMode.IJK),
             playbackModeFallbackCandidates(ChannelQuality.UHD_4K, IptvPlaybackMode.MEDIA3),
         )
+        assertEquals(
+            listOf(IptvPlaybackMode.MEDIA3),
+            playbackModeFallbackCandidates(
+                ChannelQuality.UHD_4K,
+                IptvPlaybackMode.IJK,
+                sdkInt = 33,
+            ),
+        )
         assertTrue(
-            playbackModeFallbackCandidates(ChannelQuality.UHD_4K, IptvPlaybackMode.IJK)
-                .isEmpty(),
+            playbackModeFallbackCandidates(
+                ChannelQuality.UHD_4K,
+                IptvPlaybackMode.IJK,
+                sdkInt = 23,
+            ).isEmpty(),
         )
     }
 

@@ -16,6 +16,11 @@ data class Channel(
      */
     val name: String = "",
 
+    /** M3U metadata used to resolve this channel in the managed caption catalogue. */
+    val tvgId: String = "",
+    val tvgLanguage: String = "",
+    val captionChannelId: String = "",
+
     /**
      * 節目單名稱，用於查詢節目單
      */

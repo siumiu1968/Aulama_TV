@@ -7,6 +7,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.AltRoute
 import androidx.compose.material.icons.filled.AspectRatio
+import androidx.compose.material.icons.filled.ClosedCaption
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.Refresh
@@ -29,6 +30,8 @@ fun QuickOpBtnList(
     onShowChannelUrl: () -> Unit = {},
     onShowVideoPlayerController: () -> Unit = {},
     onShowVideoPlayerDisplayMode: () -> Unit = {},
+    showLiveCaptionProvider: () -> Boolean = { false },
+    onShowLiveCaption: () -> Unit = {},
     onShowMoreSettings: () -> Unit = {},
     onClearCache: () -> Unit = {},
     onUserAction: () -> Unit = {},
@@ -71,6 +74,16 @@ fun QuickOpBtnList(
                 title = "播放控制",
                 onSelect = onShowVideoPlayerController,
             )
+        }
+
+        if (showLiveCaptionProvider()) {
+            item {
+                QuickOpBtn(
+                    icon = Icons.Default.ClosedCaption,
+                    title = "即時字幕",
+                    onSelect = onShowLiveCaption,
+                )
+            }
         }
 
         item {

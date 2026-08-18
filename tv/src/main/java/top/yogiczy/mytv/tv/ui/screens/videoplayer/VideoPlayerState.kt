@@ -82,8 +82,17 @@ internal fun selectPlaybackModeForRoute(
 internal fun playbackModeFallbackCandidates(
     quality: ChannelQuality,
     currentMode: IptvPlaybackMode,
+    sdkInt: Int = Build.VERSION.SDK_INT,
 ): List<IptvPlaybackMode> = if (quality == ChannelQuality.UHD_4K) {
-    if (currentMode == IptvPlaybackMode.MEDIA3) listOf(IptvPlaybackMode.IJK) else emptyList()
+    when (currentMode) {
+        IptvPlaybackMode.MEDIA3 -> listOf(IptvPlaybackMode.IJK)
+        IptvPlaybackMode.IJK -> if (sdkInt > Build.VERSION_CODES.M) {
+            listOf(IptvPlaybackMode.MEDIA3)
+        } else {
+            emptyList()
+        }
+        IptvPlaybackMode.IJK_SOFTWARE -> emptyList()
+    }
 } else {
     when (currentMode) {
         IptvPlaybackMode.IJK -> listOf(
@@ -150,6 +159,32 @@ internal fun acceptsVideoOutputGeneration(
     activeGeneration: Int,
 ): Boolean = sourceGeneration == activeGeneration
 
+internal data class LiveCaptionMediaItemKey(
+    val routeUrl: String,
+    val targetOffsetMs: Long?,
+)
+
+internal enum class LiveCaptionOffsetAction {
+    VERIFY_CURRENT_MEDIA_ITEM,
+    REPREPARE_MEDIA3,
+    ALREADY_CLEAR,
+    REJECT,
+}
+
+internal fun liveCaptionOffsetAction(
+    desired: LiveCaptionMediaItemKey,
+    currentMode: IptvPlaybackMode,
+    preparedMedia3Item: LiveCaptionMediaItemKey?,
+    lastMedia3Reprepare: LiveCaptionMediaItemKey?,
+): LiveCaptionOffsetAction = when {
+    currentMode != IptvPlaybackMode.MEDIA3 && desired.targetOffsetMs == null ->
+        LiveCaptionOffsetAction.ALREADY_CLEAR
+    currentMode == IptvPlaybackMode.MEDIA3 && preparedMedia3Item == desired ->
+        LiveCaptionOffsetAction.VERIFY_CURRENT_MEDIA_ITEM
+    lastMedia3Reprepare == desired -> LiveCaptionOffsetAction.REJECT
+    else -> LiveCaptionOffsetAction.REPREPARE_MEDIA3
+}
+
 @Stable
 class VideoPlayerState(
     private var instance: VideoPlayer,
@@ -170,6 +205,9 @@ class VideoPlayerState(
     private var activeIJKSoftwareDecode = false
     private var activeLeTvVendorPlayer = instance is LeTvVideoPlayer
     private var activeStabilityProfile = IptvStabilityProfile.FAST_START
+    private var liveOffsetTargetMs: Long? = null
+    private var preparedMedia3LiveOffsetItem: LiveCaptionMediaItemKey? = null
+    private var lastCaptionMedia3Reprepare: LiveCaptionMediaItemKey? = null
     private var initialized = false
     private var playbackGeneration = 0
     private var activePlayerSession = 0L
@@ -259,6 +297,8 @@ class VideoPlayerState(
         clearTerminalRetry()
         if (currentRoute?.url != route.url) {
             fourKFallbackRouteUrl = null
+            preparedMedia3LiveOffsetItem = null
+            lastCaptionMedia3Reprepare = null
         }
         if (
             route.quality == ChannelQuality.UHD_4K &&
@@ -310,6 +350,43 @@ class VideoPlayerState(
 
     fun seekTo(position: Long) {
         instance.seekTo(position)
+    }
+
+    /**
+     * 即時字幕需要一個可量度嘅 live edge。Media3 可以精準調整；如果目前係
+     * IJK，啟用字幕時只重建同一條實際播放線路一次，唔會消耗或重排路由。
+     */
+    fun setLiveCaptionOffsetTargetMs(targetMs: Long?): Boolean {
+        val targetChanged = liveOffsetTargetMs != targetMs
+        liveOffsetTargetMs = targetMs
+        val route = currentRoute ?: return false
+        if (targetChanged) lastCaptionMedia3Reprepare = null
+        val desired = LiveCaptionMediaItemKey(route.url, targetMs)
+        return when (
+            liveCaptionOffsetAction(
+                desired = desired,
+                currentMode = playbackMode,
+                preparedMedia3Item = preparedMedia3LiveOffsetItem,
+                lastMedia3Reprepare = lastCaptionMedia3Reprepare,
+            )
+        ) {
+            LiveCaptionOffsetAction.VERIFY_CURRENT_MEDIA_ITEM ->
+                instance.setLiveOffsetTargetMs(targetMs)
+            LiveCaptionOffsetAction.ALREADY_CLEAR -> true
+            LiveCaptionOffsetAction.REJECT -> false
+            LiveCaptionOffsetAction.REPREPARE_MEDIA3 -> {
+                lastCaptionMedia3Reprepare = desired
+                prepare(
+                    route = route,
+                    retrying = true,
+                    preferredPlaybackMode = IptvPlaybackMode.MEDIA3,
+                    firstFrameTimeoutMs = currentFirstFrameTimeoutMs,
+                )
+                // A rebuild was scheduled, but synchronization is not proven until the
+                // new MediaItem renders a frame and this method verifies its live offset.
+                false
+            }
+        }
     }
 
     fun stop() {
@@ -639,6 +716,11 @@ class VideoPlayerState(
         requiresSurfaceView = route.quality == ChannelQuality.UHD_4K ||
             mode == IptvPlaybackMode.MEDIA3
         replacePlayerForSession(mode)
+        preparedMedia3LiveOffsetItem = if (mode == IptvPlaybackMode.MEDIA3) {
+            LiveCaptionMediaItemKey(route.url, liveOffsetTargetMs)
+        } else {
+            null
+        }
         // VideoPlayerState owns route-aware engine fallback. Keep the lower-level
         // player watchdog as a delayed safety net so both timers cannot fire in
         // the same frame and race terminal state against a new engine.
@@ -681,6 +763,7 @@ class VideoPlayerState(
         activeIJKSoftwareDecode = softwareDecode
         activeLeTvVendorPlayer = useLeTvVendorPlayer
         instance.setPlaybackAllowed(appInForeground)
+        instance.setLiveOffsetTargetMs(liveOffsetTargetMs)
         if (initialized) configureInstance()
     }
 

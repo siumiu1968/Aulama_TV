@@ -52,6 +52,22 @@ import top.yogiczy.mytv.tv.ui.utils.media3BufferTuning
 import top.yogiczy.mytv.tv.account.aulamaRequestHeaders
 import java.util.concurrent.TimeUnit
 
+internal fun liveOffsetSeekPositionMs(
+    currentPositionMs: Long,
+    currentOffsetMs: Long,
+    targetOffsetMs: Long,
+    toleranceMs: Long = 600L,
+): Long? {
+    val adjustmentMs = targetOffsetMs - currentOffsetMs
+    if (kotlin.math.abs(adjustmentMs) < toleranceMs) return null
+    return (currentPositionMs - adjustmentMs).coerceAtLeast(0L)
+}
+
+internal fun updatedLiveOffsetAdjustmentAttempts(
+    currentAttempts: Int,
+    synchronized: Boolean,
+): Int = if (synchronized) 0 else currentAttempts + 1
+
 @OptIn(UnstableApi::class)
 class Media3VideoPlayer(
     private val context: Context,
@@ -59,6 +75,9 @@ class Media3VideoPlayer(
     private val stabilityProfile: IptvStabilityProfile = IptvStabilityProfile.FAST_START,
 ) : VideoPlayer(coroutineScope) {
     private val log = Logger.create(javaClass.simpleName)
+    private var liveOffsetTargetMs: Long? = null
+    private var preparedMediaItemLiveOffsetTargetMs: Long? = null
+    private var liveOffsetAdjustmentAttempts = 0
 
     private val toneMappingCodecAdapterFactory = object : MediaCodecAdapter.Factory {
         private val delegate = DefaultMediaCodecAdapterFactory(context).let { factory ->
@@ -216,7 +235,18 @@ class Media3VideoPlayer(
         route: ChannelRoute,
         contentType: Int? = null,
     ): MediaSource? {
-        val mediaItem = MediaItem.fromUri(uri)
+        val mediaItem = MediaItem.Builder()
+            .setUri(uri)
+            .apply {
+                liveOffsetTargetMs?.let { targetOffsetMs ->
+                    setLiveConfiguration(
+                        MediaItem.LiveConfiguration.Builder()
+                            .setTargetOffsetMs(targetOffsetMs)
+                            .build()
+                    )
+                }
+            }
+            .build()
         val dataSourceFactory = dataSourceFactory(route)
 
         if (uri.toString().startsWith("rtp://")) {
@@ -252,6 +282,7 @@ class Media3VideoPlayer(
         playbackHealthJob?.cancel()
         playbackHealthReported = false
         recentAudioUnderruns.clear()
+        liveOffsetAdjustmentAttempts = 0
         currentRoute = route
         val uri = Uri.parse(route.url.let { if (it.endsWith("?")) "${it}t" else it })
         val resolvedContentType = contentType ?: if (isLikelyHlsStreamUrl(route.url)) {
@@ -268,6 +299,7 @@ class Media3VideoPlayer(
             videoPlayer.stop()
             videoPlayer.clearMediaItems()
             videoPlayer.setMediaSource(mediaSource)
+            preparedMediaItemLiveOffsetTargetMs = liveOffsetTargetMs
             currentSurfaceView?.let(videoPlayer::setVideoSurfaceView)
             currentTextureView?.let(videoPlayer::setVideoTextureView)
             videoPlayer.prepare()
@@ -333,6 +365,9 @@ class Media3VideoPlayer(
                 triggerBuffering(true)
             } else if (playbackState == Player.STATE_READY) {
                 triggerReady()
+                if (liveOffsetTargetMs != null) {
+                    applyLiveOffsetTarget()
+                }
 
                 updatePositionJob?.cancel()
                 updatePositionJob = coroutineScope.launch {
@@ -525,6 +560,51 @@ class Media3VideoPlayer(
         videoPlayer.seekTo(position)
     }
 
+    override fun setLiveOffsetTargetMs(targetMs: Long?): Boolean {
+        val normalizedTarget = targetMs?.coerceIn(
+            MIN_CAPTION_LIVE_OFFSET_MS,
+            MAX_CAPTION_LIVE_OFFSET_MS,
+        )
+        val previousTarget = liveOffsetTargetMs
+        if (normalizedTarget != previousTarget) liveOffsetAdjustmentAttempts = 0
+        liveOffsetTargetMs = normalizedTarget
+        if (videoPlayer.currentMediaItem == null) return true
+        // LiveConfiguration is immutable. The owner must rebuild this same route once
+        // before verification whenever the desired target differs, including OFF/null.
+        if (preparedMediaItemLiveOffsetTargetMs != normalizedTarget) return false
+        return applyLiveOffsetTarget()
+    }
+
+    private fun applyLiveOffsetTarget(): Boolean {
+        if (!videoPlayer.isCurrentMediaItemLive) return false
+        val targetMs = liveOffsetTargetMs
+        if (targetMs == null) {
+            liveOffsetAdjustmentAttempts = 0
+            return true
+        }
+        val currentOffsetMs = videoPlayer.currentLiveOffset
+        if (currentOffsetMs == C.TIME_UNSET) return false
+        val seekPositionMs = liveOffsetSeekPositionMs(
+            currentPositionMs = videoPlayer.currentPosition,
+            currentOffsetMs = currentOffsetMs,
+            targetOffsetMs = targetMs,
+            toleranceMs = LIVE_OFFSET_TOLERANCE_MS,
+        ) ?: run {
+            liveOffsetAdjustmentAttempts = 0
+            return true
+        }
+        if (liveOffsetAdjustmentAttempts >= MAX_LIVE_OFFSET_ADJUSTMENT_ATTEMPTS) return false
+        videoPlayer.seekTo(seekPositionMs)
+        val adjustedOffsetMs = videoPlayer.currentLiveOffset
+        val synchronized = adjustedOffsetMs != C.TIME_UNSET &&
+            kotlin.math.abs(adjustedOffsetMs - targetMs) < LIVE_OFFSET_TOLERANCE_MS
+        liveOffsetAdjustmentAttempts = updatedLiveOffsetAdjustmentAttempts(
+            currentAttempts = liveOffsetAdjustmentAttempts,
+            synchronized = synchronized,
+        )
+        return synchronized
+    }
+
     override fun stop() {
         playbackHealthJob?.cancel()
         recoverableErrorRetries = 0
@@ -566,6 +646,10 @@ class Media3VideoPlayer(
     }
 
     companion object {
+        private const val MIN_CAPTION_LIVE_OFFSET_MS = 6_000L
+        private const val MAX_CAPTION_LIVE_OFFSET_MS = 14_000L
+        private const val LIVE_OFFSET_TOLERANCE_MS = 600L
+        private const val MAX_LIVE_OFFSET_ADJUSTMENT_ATTEMPTS = 4
         private const val MAX_RECOVERABLE_ERROR_RETRIES = 1
         private const val AUDIO_UNDERRUN_LIMIT = 3
         private const val AUDIO_UNDERRUN_WINDOW_MS = 15_000L

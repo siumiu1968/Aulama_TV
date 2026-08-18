@@ -1,6 +1,7 @@
 package top.yogiczy.mytv.tv.ui.utils
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import top.yogiczy.mytv.core.data.entities.channel.ChannelQuality
@@ -8,6 +9,15 @@ import top.yogiczy.mytv.core.data.entities.channel.ChannelRoute
 
 class IptvRouteHealthStoreTest {
     private val now = 10_000_000L
+
+    @Test
+    fun `exhausted first frame timeout forgets only the learned player mode`() {
+        assertNull(preferredPlaybackModeAfterDegradation("IJK", "first-frame-timeout"))
+        assertEquals(
+            "IJK",
+            preferredPlaybackModeAfterDegradation("IJK", "long-rebuffer"),
+        )
+    }
 
     @Test
     fun `4K gets a capability bonus only when output supports it`() {

@@ -44,6 +44,12 @@ abstract class VideoPlayer(
 
     abstract fun seekTo(position: Long)
 
+    /**
+     * 將直播播放點移到 live edge 後指定毫秒數；傳入 null 會返回 live edge。
+     * 只有能可靠取得 live edge 嘅播放器先覆寫並回傳 true。
+     */
+    open fun setLiveOffsetTargetMs(targetMs: Long?): Boolean = false
+
     open fun stop() {
         loadTimeoutJob?.cancel()
         interruptJob?.cancel()

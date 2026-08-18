@@ -236,6 +236,13 @@ class MainContentState(
             _isVideoPlayerDisplayModeScreenVisible = value
         }
 
+    private var _isLiveCaptionModeScreenVisible by mutableStateOf(false)
+    var isLiveCaptionModeScreenVisible
+        get() = _isLiveCaptionModeScreenVisible
+        set(value) {
+            _isLiveCaptionModeScreenVisible = value
+        }
+
     init {
         val channelGroupList = channelGroupListProvider()
 

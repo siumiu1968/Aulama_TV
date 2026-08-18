@@ -15,7 +15,15 @@
   <a href="./LICENSE"><img src="https://img.shields.io/github/license/siumiu1968/Aulama_TV" alt="MIT License" /></a>
 </p>
 
-> 目前正式版本：Android TV `2.6.19-family`、Android 手機 `1.1.3`；Android TV 最新測試版為 `2.6.20-beta.3`。
+> 目前正式版本：Android TV `2.6.19-family`、Android 手機 `1.1.3`；Android TV 最新測試版為 `2.6.20-beta.4`。
+
+## 2.6.20 Beta 4 測試重點
+
+- **英文直播即時字幕**：已管理且標示英文語言嘅頻道可由播放控制中心開啟英文、繁中或中英雙語字幕；功能需登入高級會員或以上帳戶。
+- **字幕與直播同步**：按字幕模式將 Media3 直播延遲約 7–10 秒；換線、切台或返回前景後會重新核對實際 live offset，同步失敗會安全關閉字幕，避免錯位顯示。
+- **字幕連線有界自救**：WebSocket 斷線會有限重連；App 進入背景即停止連線，返回前景先重新同步，避免背景繼續佔用連線及字幕額度。
+- **穩定識別字幕來源**：以 M3U `tvg-id`、`tvg-language` 及標準化來源網址建立固定頻道／線路識別，換線時唔會沿用上一條線嘅舊字幕。
+- **4K 開台兼容修正**：4K 直連首幀等待增至 30 秒；Android 7 或以上會在 Media3／IJK 間作最多一次對稱回退，舊 Android TV 保持 IJK，兩種模式都逾時後只清除該候選線路嘅舊播放器偏好。
 
 ## 2.6.20 Beta 3 測試重點
 
@@ -86,6 +94,7 @@
 - **智能多線路**：按畫質、連線地區、成功率、啟動速度、卡頓與近期穩定觀看表現排列候選線路；播放異常會先嘗試同一來源嘅相容播放器，再平順切換後備。
 - **手動優先**：可為同一頻道排定多條優先線路；首選失敗後會按高清、可用性及本機經驗繼續後備。
 - **Aulama ID**：訪客可直接使用；登入後可用 QR Code／配對碼同步收藏、自訂 M3U 及線路優先次序。
+- **即時字幕**：已管理英文直播源可為高級會員提供英文、繁中或中英雙語字幕，並以有界直播延遲保持同步。
 - **播放相容性**：按裝置能力選擇合適的解碼及色彩路徑，舊 Android TV 不支援 HDR 時會避開不合適線路。
 - **個人化**：支援收藏、數字選台、換台反轉、自訂 M3U／TVBox 清單與自訂節目單。
 
@@ -93,7 +102,7 @@
 
 | 平台 | 版本 | 下載 |
 | --- | --- | --- |
-| Android TV／Google TV 測試版 | `2.6.20-beta.3` | [下載 Beta APK](https://github.com/siumiu1968/Aulama_TV/releases/download/v2.6.20-beta.3/mytv-android-tv-2.6.20-beta.3-all-sdk21.apk) |
+| Android TV／Google TV 測試版 | `2.6.20-beta.4` | [下載 Beta APK](https://github.com/siumiu1968/Aulama_TV/releases/download/v2.6.20-beta.4/mytv-android-tv-2.6.20-beta.4-all-sdk21.apk) |
 | Android TV／Google TV | `2.6.19-family` | [下載 APK](https://github.com/siumiu1968/Aulama_TV/releases/download/v2.6.19-family/mytv-android-tv-2.6.19-family-all-sdk21.apk) |
 | Android 手機 | `1.1.3` | [下載 APK](https://github.com/siumiu1968/Aulama_TV/releases/tag/android-v1.1.3) |
 | 網頁版 | 最新版 | [開啟 Aulama IPTV](https://aulama.org/iptv/) |

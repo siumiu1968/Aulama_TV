@@ -8,9 +8,9 @@ import top.yogiczy.mytv.core.data.entities.channel.ChannelQuality
 
 class IptvPlaybackHealthPolicyTest {
     @Test
-    fun `direct 4K waits fifteen seconds while relay keeps its longer window`() {
+    fun `direct 4K and relay both keep a thirty second first frame window`() {
         assertEquals(
-            15_000L,
+            30_000L,
             IptvPlaybackHealthPolicy.firstFrameTimeoutMsFor(
                 quality = ChannelQuality.UHD_4K,
                 isRelay = false,

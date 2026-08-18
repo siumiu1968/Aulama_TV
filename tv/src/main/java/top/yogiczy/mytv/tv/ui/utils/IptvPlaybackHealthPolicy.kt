@@ -19,7 +19,7 @@ internal sealed interface IptvDegradationReason {
 
 internal object IptvPlaybackHealthPolicy {
     const val firstFrameTimeoutMs = 15_000L
-    const val fourKFirstFrameTimeoutMs = 15_000L
+    const val fourKFirstFrameTimeoutMs = 30_000L
     const val relayFirstFrameTimeoutMs = 30_000L
     const val longRebufferTimeoutMs = 12_000L
     const val stallWindowMs = 45_000L

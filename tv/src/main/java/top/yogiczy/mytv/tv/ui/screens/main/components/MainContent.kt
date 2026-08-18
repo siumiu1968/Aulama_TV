@@ -3,6 +3,9 @@ package top.yogiczy.mytv.tv.ui.screens.main.components
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -16,6 +19,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import top.yogiczy.mytv.core.data.entities.channel.ChannelGroupList
+import top.yogiczy.mytv.core.data.entities.channel.Channel
 import top.yogiczy.mytv.core.data.entities.channel.ChannelGroupList.Companion.channelIdx
 import top.yogiczy.mytv.core.data.entities.channel.ChannelGroupList.Companion.channelList
 import top.yogiczy.mytv.core.data.entities.channel.ChannelList
@@ -28,6 +32,15 @@ import top.yogiczy.mytv.core.data.repositories.epg.EpgRepository
 import top.yogiczy.mytv.core.data.repositories.iptv.IptvRepository
 import top.yogiczy.mytv.core.data.utils.ChannelUtil
 import top.yogiczy.mytv.tv.account.AulamaAccount
+import top.yogiczy.mytv.tv.account.AulamaAccountState
+import top.yogiczy.mytv.tv.caption.LiveCaptionMode
+import top.yogiczy.mytv.tv.caption.LiveCaptionLifecycleEvent
+import top.yogiczy.mytv.tv.caption.LiveCaptionLifecycleSyncState
+import top.yogiczy.mytv.tv.caption.LiveCaptionSession
+import top.yogiczy.mytv.tv.caption.isEnglishLanguageTag
+import top.yogiczy.mytv.tv.caption.liveCaptionTargetDelayMs
+import top.yogiczy.mytv.tv.caption.reduceLiveCaptionLifecycle
+import top.yogiczy.mytv.tv.caption.withVerifiedOffset
 import top.yogiczy.mytv.tv.ui.material.PopupContent
 import top.yogiczy.mytv.tv.ui.material.Snackbar
 import top.yogiczy.mytv.tv.ui.material.Visible
@@ -41,6 +54,8 @@ import top.yogiczy.mytv.tv.ui.screens.classicchannel.ClassicChannelScreen
 import top.yogiczy.mytv.tv.ui.screens.datetime.DatetimeScreen
 import top.yogiczy.mytv.tv.ui.screens.epg.EpgScreen
 import top.yogiczy.mytv.tv.ui.screens.epgreverse.EpgReverseScreen
+import top.yogiczy.mytv.tv.ui.screens.livecaption.LiveCaptionModeScreen
+import top.yogiczy.mytv.tv.ui.screens.livecaption.LiveCaptionOverlay
 import top.yogiczy.mytv.tv.ui.screens.monitor.MonitorScreen
 import top.yogiczy.mytv.tv.ui.screens.quickop.QuickOpScreen
 import top.yogiczy.mytv.tv.ui.screens.settings.SettingsScreen
@@ -52,10 +67,32 @@ import top.yogiczy.mytv.tv.ui.screens.videoplayercontroller.VideoPlayerControlle
 import top.yogiczy.mytv.tv.ui.screens.videoplayerdiaplaymode.VideoPlayerDisplayModeScreen
 import top.yogiczy.mytv.tv.ui.screens.webview.WebViewScreen
 import top.yogiczy.mytv.tv.ui.utils.captureBackKey
+import top.yogiczy.mytv.tv.ui.utils.Configs
 import top.yogiczy.mytv.tv.ui.utils.handleDragGestures
 import top.yogiczy.mytv.tv.ui.utils.handleKeyEvents
 
 private const val SELECT_DOUBLE_PRESS_WINDOW_MS = 400L
+private const val LIVE_CAPTION_SYNC_RETRY_COUNT = 5
+private const val LIVE_CAPTION_SYNC_RETRY_DELAY_MS = 300L
+
+private fun isLiveCaptionChannel(channel: Channel): Boolean {
+    return isEnglishLanguageTag(channel.tvgLanguage) && channel.captionChannelId.isNotBlank()
+}
+
+private fun liveCaptionAccessMessage(state: AulamaAccountState): String = when (state) {
+    is AulamaAccountState.SignedIn -> if (
+        state.profile.isSuperAdmin || state.profile.role in setOf("premium", "admin", "super_admin")
+    ) "" else "即時字幕只限高級會員或以上"
+    AulamaAccountState.Restoring,
+    AulamaAccountState.StartingPairing,
+    is AulamaAccountState.Pairing -> "正在核對 Aulama ID…"
+    else -> "請先登入 Aulama ID 使用即時字幕"
+}
+
+private fun liveCaptionTargetOffsetMs(mode: LiveCaptionMode): Long? = when (mode) {
+    LiveCaptionMode.OFF -> null
+    else -> liveCaptionTargetDelayMs(mode)
+}
 
 @Composable
 fun MainContent(
@@ -81,8 +118,113 @@ fun MainContent(
         }
     }
     val pendingSelectJob = remember { mutableStateOf<Job?>(null) }
-
+    val liveCaptionSession = remember { LiveCaptionSession() }
+    val liveCaptionSessionState by liveCaptionSession.state.collectAsState()
+    val accountState by AulamaAccount.manager.state.collectAsState()
+    val selectedLiveCaptionMode = remember { mutableStateOf(Configs.liveCaptionMode) }
     val lifecycleOwner = LocalLifecycleOwner.current
+    val liveCaptionLifecycle = remember(lifecycleOwner) {
+        mutableStateOf(
+            LiveCaptionLifecycleSyncState(
+                foreground = lifecycleOwner.lifecycle.currentState
+                    .isAtLeast(Lifecycle.State.RESUMED),
+            )
+        )
+    }
+
+    val captionChannel = mainContentState.currentChannel
+    val captionRoute = captionChannel.routes.getOrNull(mainContentState.currentChannelUrlIdx)
+    val liveCaptionAvailable = isLiveCaptionChannel(captionChannel) &&
+        captionRoute?.captionRouteId?.isNotBlank() == true
+    val captionAccessMessage = liveCaptionAccessMessage(accountState)
+    val effectiveCaptionMode = selectedLiveCaptionMode.value.takeIf {
+        liveCaptionAvailable && captionAccessMessage.isBlank()
+    } ?: LiveCaptionMode.OFF
+    val captionTargetOffsetMs = liveCaptionTargetOffsetMs(effectiveCaptionMode)
+
+    LaunchedEffect(effectiveCaptionMode) {
+        // Language-only changes at the same playback delay stay on the existing socket.
+        liveCaptionSession.setMode(effectiveCaptionMode)
+    }
+
+    LaunchedEffect(
+        captionTargetOffsetMs,
+        captionChannel.captionChannelId,
+        captionRoute?.captionRouteId,
+        videoPlayerState.hasRenderedFirstFrame,
+        liveCaptionLifecycle.value.foreground,
+        liveCaptionLifecycle.value.resumeGeneration,
+    ) {
+        val targetOffsetMs = captionTargetOffsetMs
+        val resumeGeneration = liveCaptionLifecycle.value.resumeGeneration
+        liveCaptionLifecycle.value = liveCaptionLifecycle.value.copy(synchronized = false)
+        if (targetOffsetMs == null) {
+            videoPlayerState.setLiveCaptionOffsetTargetMs(null)
+            return@LaunchedEffect
+        }
+        if (!liveCaptionLifecycle.value.foreground) return@LaunchedEffect
+        if (!videoPlayerState.hasRenderedFirstFrame) {
+            return@LaunchedEffect
+        }
+        var synchronized = videoPlayerState.setLiveCaptionOffsetTargetMs(targetOffsetMs)
+        if (videoPlayerState.hasRenderedFirstFrame) {
+            for (attempt in 1..LIVE_CAPTION_SYNC_RETRY_COUNT) {
+                if (synchronized) break
+                delay(LIVE_CAPTION_SYNC_RETRY_DELAY_MS)
+                if (!videoPlayerState.hasRenderedFirstFrame) return@LaunchedEffect
+                synchronized = videoPlayerState.setLiveCaptionOffsetTargetMs(targetOffsetMs)
+            }
+        }
+        liveCaptionLifecycle.value = liveCaptionLifecycle.value.withVerifiedOffset(
+            verified = synchronized,
+            expectedResumeGeneration = resumeGeneration,
+        )
+        if (
+            videoPlayerState.hasRenderedFirstFrame &&
+            !synchronized
+        ) {
+            liveCaptionSession.stop()
+            selectedLiveCaptionMode.value = LiveCaptionMode.OFF
+            Configs.liveCaptionMode = LiveCaptionMode.OFF
+            Snackbar.show("目前播放方式未能同步即時字幕")
+        }
+    }
+
+    LaunchedEffect(
+        captionChannel.captionChannelId,
+        captionRoute?.captionRouteId,
+        videoPlayerState.hasRenderedFirstFrame,
+        effectiveCaptionMode != LiveCaptionMode.OFF,
+        liveCaptionLifecycle.value.synchronized,
+        liveCaptionLifecycle.value.foreground,
+    ) {
+        if (
+            effectiveCaptionMode == LiveCaptionMode.OFF ||
+            captionRoute == null ||
+            !videoPlayerState.hasRenderedFirstFrame ||
+            !liveCaptionLifecycle.value.synchronized ||
+            !liveCaptionLifecycle.value.foreground
+        ) {
+            liveCaptionSession.stop()
+        } else {
+            liveCaptionSession.start(captionChannel, captionRoute, effectiveCaptionMode)
+        }
+    }
+
+    LaunchedEffect(liveCaptionSessionState.errorCode) {
+        if (liveCaptionSessionState.errorCode == "caption_quota_exhausted") {
+            selectedLiveCaptionMode.value = LiveCaptionMode.OFF
+            Configs.liveCaptionMode = LiveCaptionMode.OFF
+            Snackbar.show("今日 120 分鐘即時字幕額度已用完")
+        }
+    }
+
+    DisposableEffect(liveCaptionSession) {
+        onDispose {
+            liveCaptionSession.close()
+        }
+    }
+
     val hasBlockingOverlay = mainContentState.isChannelScreenVisible ||
         mainContentState.isSettingsScreenVisible ||
         mainContentState.isVideoPlayerControllerScreenVisible ||
@@ -90,13 +232,33 @@ fun MainContent(
         mainContentState.isEpgScreenVisible ||
         mainContentState.isChannelUrlScreenVisible ||
         mainContentState.isVideoPlayerDisplayModeScreenVisible ||
+        mainContentState.isLiveCaptionModeScreenVisible ||
         videoPlayerState.hasTerminalRetry
 
     // 監聽生命週期：從後台回到前台時立即刷新當前頻道
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_START) {
-                mainContentState.refreshCurrentChannel()
+            when (event) {
+                Lifecycle.Event.ON_START -> mainContentState.refreshCurrentChannel()
+                Lifecycle.Event.ON_RESUME -> {
+                    liveCaptionSession.stop()
+                    liveCaptionLifecycle.value = reduceLiveCaptionLifecycle(
+                        liveCaptionLifecycle.value,
+                        LiveCaptionLifecycleEvent.RESUME,
+                    )
+                }
+                Lifecycle.Event.ON_PAUSE,
+                Lifecycle.Event.ON_STOP,
+                Lifecycle.Event.ON_DESTROY -> {
+                    // Stop synchronously at the lifecycle boundary; the next RESUME must
+                    // re-verify Media3's actual offset before opening a new WebSocket.
+                    liveCaptionSession.stop()
+                    liveCaptionLifecycle.value = reduceLiveCaptionLifecycle(
+                        liveCaptionLifecycle.value,
+                        LiveCaptionLifecycleEvent.PAUSE_OR_STOP,
+                    )
+                }
+                else -> Unit
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -180,6 +342,13 @@ fun MainContent(
         VideoPlayerScreen(
             state = videoPlayerState,
             showMetadataProvider = { settingsViewModel.debugShowVideoPlayerMetadata },
+        )
+
+        LiveCaptionOverlay(
+            modeProvider = { effectiveCaptionMode },
+            englishProvider = { liveCaptionSessionState.visibleCue?.english.orEmpty() },
+            traditionalChineseProvider = { liveCaptionSessionState.visibleCue?.zhHant.orEmpty() },
+            stateMessageProvider = { liveCaptionSessionState.message.orEmpty() },
         )
 
         Visible({ ChannelUtil.isHybridWebViewUrl(mainContentState.currentChannel.urlList[mainContentState.currentChannelUrlIdx]) }) {
@@ -374,6 +543,11 @@ fun MainContent(
                 mainContentState.isQuickOpScreenVisible = false
                 mainContentState.isVideoPlayerDisplayModeScreenVisible = true
             },
+            showLiveCaptionProvider = { liveCaptionAvailable },
+            onShowLiveCaption = {
+                mainContentState.isQuickOpScreenVisible = false
+                mainContentState.isLiveCaptionModeScreenVisible = true
+            },
             onShowMoreSettings = {
                 mainContentState.isQuickOpScreenVisible = false
                 mainContentState.isSettingsScreenVisible = true
@@ -387,6 +561,27 @@ fun MainContent(
                 }
             },
             onClose = { mainContentState.isQuickOpScreenVisible = false },
+        )
+    }
+
+    PopupContent(
+        visibleProvider = { mainContentState.isLiveCaptionModeScreenVisible },
+        onDismissRequest = { mainContentState.isLiveCaptionModeScreenVisible = false },
+    ) {
+        LiveCaptionModeScreen(
+            currentModeProvider = { selectedLiveCaptionMode.value },
+            statusMessageProvider = { liveCaptionSessionState.message.orEmpty() },
+            accessMessageProvider = { captionAccessMessage },
+            onModeSelected = { mode ->
+                if (mode != LiveCaptionMode.OFF && captionAccessMessage.isNotBlank()) {
+                    Snackbar.show(captionAccessMessage)
+                } else {
+                    selectedLiveCaptionMode.value = mode
+                    Configs.liveCaptionMode = mode
+                    mainContentState.isLiveCaptionModeScreenVisible = false
+                }
+            },
+            onClose = { mainContentState.isLiveCaptionModeScreenVisible = false },
         )
     }
 

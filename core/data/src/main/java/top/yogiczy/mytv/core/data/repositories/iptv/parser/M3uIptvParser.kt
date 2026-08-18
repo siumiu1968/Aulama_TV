@@ -3,6 +3,7 @@ package top.yogiczy.mytv.core.data.repositories.iptv.parser
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import top.yogiczy.mytv.core.data.entities.channel.Channel
+import top.yogiczy.mytv.core.data.entities.channel.CaptionIdentifiers
 import top.yogiczy.mytv.core.data.entities.channel.ChannelGroup
 import top.yogiczy.mytv.core.data.entities.channel.ChannelGroupList
 import top.yogiczy.mytv.core.data.entities.channel.ChannelList
@@ -46,6 +47,7 @@ class M3uIptvParser : IptvParser {
                     val quality = ChannelQuality.detect(item.name, item.channelName, item.groupName)
                     iptvList += IptvResponseItem(
                         tvgId = item.tvgId,
+                        tvgLanguage = item.tvgLanguage,
                         logicalKey = item.tvgId?.takeIf(String::isNotBlank)
                             ?: normalizeChannelName(item.name).lowercase(),
                         name = normalizeChannelName(item.name),
@@ -58,6 +60,9 @@ class M3uIptvParser : IptvParser {
                             referrer = referrer,
                             userAgent = userAgent,
                             sourceOrder = iptvList.size,
+                            tvgId = item.tvgId.orEmpty(),
+                            tvgLanguage = item.tvgLanguage.orEmpty(),
+                            captionRouteId = CaptionIdentifiers.routeId(line),
                         ),
                         logo = item.logo,
                     )
@@ -79,6 +84,13 @@ class M3uIptvParser : IptvParser {
                     .sortedBy(ChannelRoute::sourceOrder)
                 ParsedChannel(first.groupName, first.route.sourceOrder, Channel(
                     name = first.name,
+                    tvgId = first.tvgId.orEmpty(),
+                    tvgLanguage = items.firstNotNullOfOrNull {
+                        it.tvgLanguage?.takeIf(String::isNotBlank)
+                    }.orEmpty(),
+                    captionChannelId = first.tvgId
+                        ?.let(CaptionIdentifiers::channelId)
+                        .orEmpty(),
                     epgName = first.channelName,
                     routes = routes,
                     logo = AulamaChannelLogoResolver.resolve(
@@ -106,6 +118,7 @@ class M3uIptvParser : IptvParser {
         val name = line.substringAfterLast(',').trim()
         return PendingItem(
             tvgId = attribute("tvg-id"),
+            tvgLanguage = attribute("tvg-language"),
             name = name,
             channelName = attribute("tvg-name").orEmpty().ifBlank { name },
             groupName = attribute("group-title").orEmpty().ifBlank { "其他" },
@@ -136,6 +149,7 @@ class M3uIptvParser : IptvParser {
 
     private data class PendingItem(
         val tvgId: String?,
+        val tvgLanguage: String?,
         val name: String,
         val channelName: String,
         val groupName: String,
@@ -150,6 +164,7 @@ class M3uIptvParser : IptvParser {
 
     private data class IptvResponseItem(
         val tvgId: String?,
+        val tvgLanguage: String?,
         val logicalKey: String,
         val name: String,
         val channelName: String,

@@ -11,6 +11,9 @@ data class ChannelRoute(
     val referrer: String? = null,
     val userAgent: String? = null,
     val sourceOrder: Int = 0,
+    val tvgId: String = "",
+    val tvgLanguage: String = "",
+    val captionRouteId: String = "",
 ) {
     val requestHeaders: Map<String, String>
         get() = buildMap {
