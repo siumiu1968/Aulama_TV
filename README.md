@@ -15,7 +15,15 @@
   <a href="./LICENSE"><img src="https://img.shields.io/github/license/siumiu1968/Aulama_TV" alt="MIT License" /></a>
 </p>
 
-> 目前正式版本：Android TV `2.6.19-family`、Android 手機 `1.1.3`；Android TV 最新測試版為 `2.6.20-beta.2`。
+> 目前正式版本：Android TV `2.6.19-family`、Android 手機 `1.1.3`；Android TV 最新測試版為 `2.6.20-beta.3`。
+
+## 2.6.20 Beta 3 測試重點
+
+- **高清優先即時測線**：進入頻道後照常立即播放，同時以最多三個輕量 HTTP 探測檢查候選；先揀可用高清線，同畫質再參考本機長期穩定度與速度，全程只維持一個播放器。
+- **尾線會回訪前線**：跌落 720p 後再出現卡頓，會在背景重測前面 1080p；確認恢復先回升。整個播放 session 最多多試一輪，唔會無限循環，原有卡頓偵測門檻冇改。
+- **更新包可重用及自動清理**：下載完成先驗證並原子保存；安裝頁冇彈出時可直接重新開啟，唔使重下載。殘缺、舊版及安裝成功後嘅 APK 會自動清理。
+- **修復更新後遙控器失焦**：下載／安裝失敗後保留更新畫面及正確焦點；設定頁改成完整圓角卡片，避免左側選單露出直角。
+- **電視預設直接連線**：訪客及一般用戶維持直連；最高管理員亦預設直連，香港／日本中轉只會喺手動選擇後使用，失敗時回落直連。
 
 ## 2.6.20 Beta 2 測試重點
 
@@ -69,14 +77,14 @@
 
 <img src="./screenshots/aulama-tv-smart-routes.png" width="100%" alt="Aulama TV 智能播放線路面板" />
 
-用遙控器即可切換自動、香港、日本或直接連線模式，亦可為個別線路設定手動優先次序。
+電視預設直接連線；最高管理員可手動切換香港或日本中轉，亦可為個別來源設定優先次序。
 
 ## 功能
 
 - **遙控器優先介面**：適配 Android TV、Google TV 及 D-pad；清晰顯示焦點、目前狀態及可操作項目。
 - **節目單**：顯示目前、下一節與當日節目；支援 XMLTV／XMLTV.GZ 自訂來源。
 - **智能多線路**：按畫質、連線地區、成功率、啟動速度、卡頓與近期穩定觀看表現排列候選線路；播放異常會先嘗試同一來源嘅相容播放器，再平順切換後備。
-- **手動優先**：可為同一頻道排定多條優先線路；自動模式會在首選失敗後繼續後備。
+- **手動優先**：可為同一頻道排定多條優先線路；首選失敗後會按高清、可用性及本機經驗繼續後備。
 - **Aulama ID**：訪客可直接使用；登入後可用 QR Code／配對碼同步收藏、自訂 M3U 及線路優先次序。
 - **播放相容性**：按裝置能力選擇合適的解碼及色彩路徑，舊 Android TV 不支援 HDR 時會避開不合適線路。
 - **個人化**：支援收藏、數字選台、換台反轉、自訂 M3U／TVBox 清單與自訂節目單。
@@ -85,7 +93,7 @@
 
 | 平台 | 版本 | 下載 |
 | --- | --- | --- |
-| Android TV／Google TV 測試版 | `2.6.20-beta.2` | [下載 Beta APK](https://github.com/siumiu1968/Aulama_TV/releases/download/v2.6.20-beta.2/mytv-android-tv-2.6.20-beta.2-all-sdk21.apk) |
+| Android TV／Google TV 測試版 | `2.6.20-beta.3` | [下載 Beta APK](https://github.com/siumiu1968/Aulama_TV/releases/download/v2.6.20-beta.3/mytv-android-tv-2.6.20-beta.3-all-sdk21.apk) |
 | Android TV／Google TV | `2.6.19-family` | [下載 APK](https://github.com/siumiu1968/Aulama_TV/releases/download/v2.6.19-family/mytv-android-tv-2.6.19-family-all-sdk21.apk) |
 | Android 手機 | `1.1.3` | [下載 APK](https://github.com/siumiu1968/Aulama_TV/releases/tag/android-v1.1.3) |
 | 網頁版 | 最新版 | [開啟 Aulama IPTV](https://aulama.org/iptv/) |

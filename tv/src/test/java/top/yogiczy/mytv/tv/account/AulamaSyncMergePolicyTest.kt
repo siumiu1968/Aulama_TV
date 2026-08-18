@@ -95,7 +95,7 @@ class AulamaSyncMergePolicyTest {
     }
 
     @Test
-    fun `manual transport preference moves selected relay first and keeps fallbacks`() {
+    fun `direct is default while manually selected relay only falls back to direct`() {
         val candidates = listOf(
             AulamaPlaybackCandidate(
                 id = "hk_relay",
@@ -118,19 +118,37 @@ class AulamaSyncMergePolicyTest {
         )
 
         assertEquals(
-            listOf("jp_relay", "hk_relay", "direct"),
+            listOf("jp_relay", "direct"),
             AulamaPlaybackPolicy.prioritize(candidates, "jp_relay").map { it.id },
         )
         assertEquals(
-            listOf("direct", "hk_relay", "jp_relay"),
+            listOf("direct"),
             AulamaPlaybackPolicy.prioritize(candidates, "direct").map { it.id },
         )
         assertEquals(
-            listOf("hk_relay", "jp_relay", "direct"),
-            AulamaPlaybackPolicy.prioritize(
-                candidates,
-                AulamaPlaybackPolicy.AUTO_PREFERENCE_ID,
-            ).map { it.id },
+            listOf("hk_relay", "direct"),
+            AulamaPlaybackPolicy.prioritize(candidates, "hk_relay").map { it.id },
+        )
+        assertEquals(
+            listOf("direct"),
+            AulamaPlaybackPolicy.allowedTransportIds(
+                preferenceId = AulamaPlaybackPolicy.DEFAULT_PREFERENCE_ID,
+                isSuperAdmin = true,
+            ),
+        )
+        assertEquals(
+            listOf("jp_relay", "direct"),
+            AulamaPlaybackPolicy.allowedTransportIds(
+                preferenceId = "jp_relay",
+                isSuperAdmin = true,
+            ),
+        )
+        assertEquals(
+            listOf("direct"),
+            AulamaPlaybackPolicy.allowedTransportIds(
+                preferenceId = "jp_relay",
+                isSuperAdmin = false,
+            ),
         )
     }
 }

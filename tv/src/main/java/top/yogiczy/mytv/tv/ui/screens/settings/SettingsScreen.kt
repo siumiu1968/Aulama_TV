@@ -1,6 +1,7 @@
 package top.yogiczy.mytv.tv.ui.screens.settings
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -20,6 +22,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -70,12 +73,22 @@ fun SettingsScreen(
                 bottom = childPadding.bottom,
             ),
     ) {
-        Row(modifier = Modifier.fillMaxSize()) {
+        val panelShape = RoundedCornerShape(22.dp)
+        Row(
+            modifier = Modifier.fillMaxSize(),
+            horizontalArrangement = Arrangement.spacedBy(18.dp),
+        ) {
             Column(
                 modifier = Modifier
-                    .width(216.dp)
+                    .width(224.dp)
                     .fillMaxHeight()
-                    .background(MaterialTheme.colors.surfaceContainerLow.copy(alpha = 0.42f)),
+                    .clip(panelShape)
+                    .background(MaterialTheme.colors.surfaceContainerLow.copy(alpha = 0.82f))
+                    .border(
+                        width = 1.dp,
+                        color = MaterialTheme.colorScheme.borderVariant.copy(alpha = 0.62f),
+                        shape = panelShape,
+                    ),
             ) {
                 Row(
                     modifier = Modifier
@@ -137,20 +150,23 @@ fun SettingsScreen(
 
             Box(
                 modifier = Modifier
-                    .padding(horizontal = 18.dp)
-                    .width(1.dp)
-                    .fillMaxHeight()
-                    .background(MaterialTheme.colorScheme.borderVariant.copy(alpha = 0.38f)),
-            )
-
-            SettingsCategoryContent(
-                modifier = Modifier
                     .weight(1f)
                     .fillMaxHeight()
-                    .padding(end = 8.dp),
-                currentCategoryProvider = { currentCategory },
-                channelGroupListProvider = channelGroupListProvider,
-            )
+                    .clip(panelShape)
+                    .background(MaterialTheme.colors.surfaceContainerLow.copy(alpha = 0.76f))
+                    .border(
+                        width = 1.dp,
+                        color = MaterialTheme.colorScheme.borderVariant.copy(alpha = 0.55f),
+                        shape = panelShape,
+                    )
+                    .padding(horizontal = 22.dp, vertical = 12.dp),
+            ) {
+                SettingsCategoryContent(
+                    modifier = Modifier.fillMaxSize(),
+                    currentCategoryProvider = { currentCategory },
+                    channelGroupListProvider = channelGroupListProvider,
+                )
+            }
         }
     }
 }

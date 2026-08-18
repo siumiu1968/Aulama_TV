@@ -22,6 +22,7 @@ import top.yogiczy.mytv.core.data.utils.Constants
 import top.yogiczy.mytv.core.data.utils.Globals
 import top.yogiczy.mytv.core.data.utils.Loggable
 import top.yogiczy.mytv.core.data.utils.Logger
+import top.yogiczy.mytv.core.util.utils.ApkInstallResult
 import top.yogiczy.mytv.core.util.utils.ApkInstaller
 import top.yogiczy.mytv.tv.ui.material.Snackbar
 import top.yogiczy.mytv.tv.ui.material.SnackbarType
@@ -327,7 +328,10 @@ object HttpServer : Loggable() {
             body.dataEmitter.close()
             os.flush()
             os.close()
-            ApkInstaller.installApk(context, uploadedApkFile.path)
+            val installResult = ApkInstaller.installApk(context, uploadedApkFile.path)
+            if (installResult is ApkInstallResult.Failed) {
+                Snackbar.show(installResult.message, type = SnackbarType.ERROR)
+            }
         }
 
         wrapResponse(response).send("success")

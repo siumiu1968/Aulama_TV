@@ -17,19 +17,21 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-
 import top.yogiczy.mytv.core.data.utils.Globals
+import top.yogiczy.mytv.core.util.utils.ApkInstallResult
 import top.yogiczy.mytv.core.util.utils.ApkInstaller
+import top.yogiczy.mytv.core.util.utils.ApkUpdateCache
 import top.yogiczy.mytv.tv.ui.material.PopupContent
 import top.yogiczy.mytv.tv.ui.material.Snackbar
 import top.yogiczy.mytv.tv.ui.material.SnackbarType
 import top.yogiczy.mytv.tv.ui.screens.settings.SettingsViewModel
 import top.yogiczy.mytv.tv.ui.screens.update.components.UpdateContent
 import top.yogiczy.mytv.tv.ui.utils.captureBackKey
-import java.io.File
 
 @Composable
 fun UpdateScreen(
@@ -38,16 +40,20 @@ fun UpdateScreen(
     updateViewModel: UpdateViewModel = viewModel(),
 ) {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val coroutineScope = rememberCoroutineScope()
-    val latestFile = remember { File(Globals.cacheDir, "latest.apk") }
+    val latestFile = remember { ApkUpdateCache.apkFile(Globals.cacheDir) }
     val packageInfo = remember { context.packageManager.getPackageInfo(context.packageName, 0) }
     val currentVersion = packageInfo.versionName ?: "0.0.0"
     var waitingForInstallPermission by remember { mutableStateOf(false) }
     var installAfterPermission by remember { mutableStateOf(false) }
+    var pendingInstallerLaunch by remember { mutableStateOf(false) }
 
     val downloadUpdate: () -> Unit = {
-        coroutineScope.launch(Dispatchers.IO) {
-            updateViewModel.downloadAndUpdate(latestFile)
+        coroutineScope.launch {
+            if (updateViewModel.downloadAndUpdate(latestFile)) {
+                pendingInstallerLaunch = true
+            }
         }
     }
 
@@ -60,7 +66,7 @@ fun UpdateScreen(
                 context.packageManager.canRequestPackageInstalls()
             ) {
                 if (installAfterPermission) {
-                    ApkInstaller.installApk(context, latestFile.path)
+                    pendingInstallerLaunch = true
                 } else {
                     downloadUpdate()
                 }
@@ -91,6 +97,28 @@ fun UpdateScreen(
         }
     }
 
+    LaunchedEffect(pendingInstallerLaunch, lifecycleOwner) {
+        if (!pendingInstallerLaunch) return@LaunchedEffect
+        lifecycleOwner.lifecycle.currentStateFlow.first {
+            it.isAtLeast(Lifecycle.State.RESUMED)
+        }
+        pendingInstallerLaunch = false
+
+        when (val result = ApkInstaller.installApk(context, latestFile.path)) {
+            ApkInstallResult.Started -> {
+                updateViewModel.markInstallerLaunched()
+                Snackbar.show(
+                    "系統安裝畫面已開啟；如未顯示可直接重新嘗試",
+                    duration = 6_000,
+                )
+            }
+
+            is ApkInstallResult.Failed -> {
+                updateViewModel.markInstallerLaunchFailed(result.message, result.cause)
+            }
+        }
+    }
+
     LaunchedEffect(currentVersion, settingsViewModel.updateChannel) {
         val updateAvailable = updateViewModel.checkUpdate(
             currentVersion = currentVersion,
@@ -109,18 +137,6 @@ fun UpdateScreen(
         }
     }
 
-    LaunchedEffect(updateViewModel.updateDownloaded) {
-        if (!updateViewModel.updateDownloaded) return@LaunchedEffect
-
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
-            ApkInstaller.installApk(context, latestFile.path)
-        } else if (context.packageManager.canRequestPackageInstalls()) {
-            ApkInstaller.installApk(context, latestFile.path)
-        } else {
-            requestInstallPermission(true)
-        }
-    }
-
     PopupContent(
         visibleProvider = { updateViewModel.visible },
         onDismissRequest = { updateViewModel.visible = false },
@@ -132,8 +148,13 @@ fun UpdateScreen(
             onDismissRequest = { updateViewModel.visible = false },
             releaseProvider = { updateViewModel.latestRelease },
             isUpdateAvailableProvider = { updateViewModel.isUpdateAvailable },
+            isUpdatingProvider = { updateViewModel.isUpdating },
+            downloadProgressProvider = { updateViewModel.downloadProgress },
+            downloadFailedProvider = { updateViewModel.downloadFailed },
+            updateDownloadedProvider = { updateViewModel.updateDownloaded },
+            installerLaunchedProvider = { updateViewModel.installerLaunched },
             onUpdateAndInstall = {
-                updateViewModel.visible = false
+                if (updateViewModel.isUpdating) return@UpdateContent
                 if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O ||
                     context.packageManager.canRequestPackageInstalls()
                 ) {

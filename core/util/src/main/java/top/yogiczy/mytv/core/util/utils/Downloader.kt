@@ -7,6 +7,7 @@ import okhttp3.OkHttpClient
 import okio.BufferedSource
 import okio.ForwardingSource
 import okio.buffer
+import java.io.BufferedOutputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.util.concurrent.TimeUnit
@@ -29,8 +30,11 @@ object Downloader {
                     val responseBody = body ?: throw Exception("下載文件失敗: 回應內容為空")
                     file.parentFile?.mkdirs()
                     responseBody.byteStream().use { input ->
-                        FileOutputStream(file).buffered().use { output ->
+                        FileOutputStream(file).use { fileOutput ->
+                            val output = BufferedOutputStream(fileOutput)
                             input.copyTo(output)
+                            output.flush()
+                            fileOutput.fd.sync()
                         }
                     }
                 }

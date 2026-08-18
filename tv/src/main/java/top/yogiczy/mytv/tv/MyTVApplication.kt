@@ -9,6 +9,7 @@ import coil.memory.MemoryCache
 import coil.request.CachePolicy
 import top.yogiczy.mytv.core.data.AppData
 import top.yogiczy.mytv.core.data.network.OkHttp
+import top.yogiczy.mytv.core.util.utils.ApkUpdateCache
 import top.yogiczy.mytv.tv.account.AulamaAccount
 
 class MyTVApplication : Application(), ImageLoaderFactory {
@@ -16,6 +17,7 @@ class MyTVApplication : Application(), ImageLoaderFactory {
         super.onCreate()
 
         AppData.init(applicationContext)
+        ApkUpdateCache.cleanupAfterAppStart(applicationContext)
         AulamaAccount.initialize(applicationContext)
         UnsafeTrustManager.enableUnsafeTrustManager()
     }

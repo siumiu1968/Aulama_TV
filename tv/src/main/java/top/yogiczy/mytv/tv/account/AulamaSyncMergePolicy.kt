@@ -90,7 +90,7 @@ internal data class AulamaPlaybackCandidate(
 )
 
 internal object AulamaPlaybackPolicy {
-    const val AUTO_PREFERENCE_ID = "auto"
+    const val DEFAULT_PREFERENCE_ID = "direct"
 
     fun candidates(
         directUrl: String,
@@ -128,17 +128,31 @@ internal object AulamaPlaybackPolicy {
         candidates: List<AulamaPlaybackCandidate>,
         preferenceId: String,
     ): List<AulamaPlaybackCandidate> {
-        if (preferenceId == AUTO_PREFERENCE_ID) return candidates
-        val preferred = candidates.firstOrNull { it.id == preferenceId } ?: return candidates
-        return listOf(preferred) + candidates.filterNot { it.url == preferred.url }
+        val direct = candidates.firstOrNull {
+            it.id == DEFAULT_PREFERENCE_ID || it.transport == AulamaPlaybackTransport.DIRECT
+        }
+        if (preferenceId == DEFAULT_PREFERENCE_ID) return listOfNotNull(direct)
+
+        val preferred = candidates.firstOrNull { it.id == preferenceId }
+        return listOfNotNull(preferred, direct).distinctBy { it.url }
     }
 
     fun preferenceLabel(preferenceId: String): String = when (preferenceId) {
-        "hk_relay" -> "香港中轉優先"
-        "jp_relay" -> "日本中轉優先"
-        "direct" -> "直接連線優先"
-        else -> "自動：香港 → 日本 → 直接"
+        "hk_relay" -> "已手動選用香港中轉；失敗會回到直連"
+        "jp_relay" -> "已手動選用日本中轉；失敗會回到直連"
+        else -> "已改用直接連線"
     }
+
+    fun allowedTransportIds(preferenceId: String, isSuperAdmin: Boolean): List<String> =
+        if (!isSuperAdmin) {
+            listOf(DEFAULT_PREFERENCE_ID)
+        } else {
+            when (preferenceId) {
+                "hk_relay" -> listOf("hk_relay", DEFAULT_PREFERENCE_ID)
+                "jp_relay" -> listOf("jp_relay", DEFAULT_PREFERENCE_ID)
+                else -> listOf(DEFAULT_PREFERENCE_ID)
+            }
+        }
 
     private fun relayLabel(candidate: AulamaPlanCandidate): String = when {
         candidate.id.equals("hk_relay", ignoreCase = true) ||

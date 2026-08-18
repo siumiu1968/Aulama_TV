@@ -61,7 +61,7 @@ fun SettingsCategoryContent(
                         .size(36.dp)
                         .background(
                             color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.58f),
-                            shape = RoundedCornerShape(6.dp),
+                            shape = RoundedCornerShape(12.dp),
                         ),
                     contentAlignment = Alignment.Center,
                 ) {

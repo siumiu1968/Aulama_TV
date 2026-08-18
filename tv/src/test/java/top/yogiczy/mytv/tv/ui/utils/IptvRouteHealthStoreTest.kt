@@ -65,6 +65,20 @@ class IptvRouteHealthStoreTest {
     }
 
     @Test
+    fun `usable 1080 route stays ahead of a faster 720 route`() {
+        val routes = listOf(
+            route("fast-720", ChannelQuality.HD, 0),
+            route("slower-1080", ChannelQuality.FULL_HD, 1),
+        )
+        val health = mapOf(
+            "fast-720" to successfulHealth(successCount = 20, startupMs = 500),
+            "slower-1080" to successfulHealth(successCount = 2, startupMs = 3_000),
+        )
+
+        assertEquals(listOf(1, 0), IptvRouteHealthStore.rankedIndices(routes, health, now))
+    }
+
+    @Test
     fun `unknown routes retain source order`() {
         val routes = listOf(
             route("second", ChannelQuality.FULL_HD, 2),

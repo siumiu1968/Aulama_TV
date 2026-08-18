@@ -52,7 +52,7 @@ fun SettingsListItem(
 ) {
     val popupManager = LocalPopupManager.current
     val focusRequester = remember { FocusRequester() }
-    val itemShape = RoundedCornerShape(6.dp)
+    val itemShape = RoundedCornerShape(14.dp)
 
     var showPush by remember { mutableStateOf(false) }
 

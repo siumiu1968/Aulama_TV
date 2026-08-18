@@ -18,7 +18,7 @@ object Constants {
     /**
      * 應用 代碼倉庫
      */
-    const val APP_REPO = "https://github.com/siumiu1968/mytv-tv-origpatch"
+    const val APP_REPO = "https://github.com/siumiu1968/Aulama_TV"
 
     const val DEFAULT_IPTV_SOURCE_URL =
         "https://gist.githubusercontent.com/siumiu1968/b6f1358a2504d228636149de4ca8d5e0/raw/hk_channels_merged_v2.m3u"
@@ -118,8 +118,8 @@ object Constants {
      * Git最新版本信息
      */
     val GIT_RELEASE_LATEST_URL = mapOf(
-        "stable" to "https://api.github.com/repos/siumiu1968/mytv-tv-origpatch/releases?per_page=30",
-        "beta" to "https://api.github.com/repos/siumiu1968/mytv-tv-origpatch/releases?per_page=30",
+        "stable" to "https://api.github.com/repos/siumiu1968/Aulama_TV/releases?per_page=30",
+        "beta" to "https://api.github.com/repos/siumiu1968/Aulama_TV/releases?per_page=30",
     )
 
     /**

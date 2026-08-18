@@ -39,19 +39,18 @@ private data class PlaybackTransportOption(
 
 private val playbackTransportOptions = listOf(
     PlaybackTransportOption(
-        AulamaPlaybackPolicy.AUTO_PREFERENCE_ID,
-        "自動",
-        "香港 → 日本 → 直接",
+        AulamaPlaybackPolicy.DEFAULT_PREFERENCE_ID,
+        "直連",
+        "預設直接連接，唔會自動使用中轉",
     ),
-    PlaybackTransportOption("hk_relay", "香港", "香港中轉優先，自動後備"),
-    PlaybackTransportOption("jp_relay", "日本", "日本中轉優先，自動後備"),
-    PlaybackTransportOption("direct", "直連", "直接連線優先，自動後備"),
+    PlaybackTransportOption("hk_relay", "香港", "手動使用香港中轉，失敗回直連"),
+    PlaybackTransportOption("jp_relay", "日本", "手動使用日本中轉，失敗回直連"),
 )
 
 @Composable
 fun PlaybackTransportItemList(
     modifier: Modifier = Modifier,
-    selectedIdProvider: () -> String = { AulamaPlaybackPolicy.AUTO_PREFERENCE_ID },
+    selectedIdProvider: () -> String = { AulamaPlaybackPolicy.DEFAULT_PREFERENCE_ID },
     sourceEntryFocusRequester: FocusRequester? = null,
     onSelected: (String) -> Unit = {},
     onUserAction: () -> Unit = {},

@@ -47,7 +47,7 @@ fun ChannelUrlScreen(
     currentUrlProvider: () -> String = { "" },
     isSuperAdminProvider: () -> Boolean = { false },
     transportPreferenceIdProvider: () -> String = {
-        AulamaPlaybackPolicy.AUTO_PREFERENCE_ID
+        AulamaPlaybackPolicy.DEFAULT_PREFERENCE_ID
     },
     onTransportPreferenceSelected: (String) -> Unit = {},
     onUrlSelected: (String) -> Unit = {},

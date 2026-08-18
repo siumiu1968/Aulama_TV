@@ -7,6 +7,7 @@ private val EXTENSIONLESS_HLS_HOSTS = setOf(
     TVB_AKAMAI_HOST,
     "10.fast.hidns.vip",
     "cdn3.indevs.in",
+    "cdn.qd.je",
 )
 
 internal fun isLikelyHlsStreamUrl(url: String): Boolean {

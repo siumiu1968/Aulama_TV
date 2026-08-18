@@ -39,8 +39,8 @@ enum class IptvPlaybackMode {
 }
 
 /**
- * 只根據實際觀看結果學習，不會每次開機逐條測速。
- * 健康線路先按畫質排序，再以成功率、啟動速度及近期表現選出同畫質最佳線路。
+ * 長期分數只根據實際觀看結果學習；短期輕量 probe 由播放頁另外處理，唔會污染呢度。
+ * 非冷卻線路先按畫質排序，再以成功率、啟動速度及近期表現選出同畫質最佳線路。
  * 近期確實失敗嘅線路會進入冷卻，避免每次換台都重試同一條壞線。
  */
 object IptvRouteHealthStore {
@@ -88,6 +88,16 @@ object IptvRouteHealthStore {
                 }
                 if (records.isNotEmpty() && records.all { isCoolingDown(it, now) }) 1 else 0
             }
+                .thenByDescending { index ->
+                    val quality = routes[index].quality
+                    if (!supports4k && quality ==
+                        top.yogiczy.mytv.core.data.entities.channel.ChannelQuality.UHD_4K
+                    ) {
+                        -1
+                    } else {
+                        quality.rank
+                    }
+                }
                 .thenByDescending { index ->
                     availableTransportIds.maxOf { transportId ->
                         performanceScore(

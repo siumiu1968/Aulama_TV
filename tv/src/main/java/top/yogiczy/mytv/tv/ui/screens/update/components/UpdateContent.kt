@@ -41,9 +41,29 @@ fun UpdateContent(
     onDismissRequest: () -> Unit = {},
     releaseProvider: () -> GitRelease = { GitRelease() },
     isUpdateAvailableProvider: () -> Boolean = { false },
+    isUpdatingProvider: () -> Boolean = { false },
+    downloadProgressProvider: () -> Int = { 0 },
+    downloadFailedProvider: () -> Boolean = { false },
+    updateDownloadedProvider: () -> Boolean = { false },
+    installerLaunchedProvider: () -> Boolean = { false },
     onUpdateAndInstall: () -> Unit = {},
 ) {
     val release = releaseProvider()
+    val isUpdating = isUpdatingProvider()
+    val updateDownloaded = updateDownloadedProvider()
+    val primaryActionLabel = when {
+        isUpdating -> "下載中 ${downloadProgressProvider()}%"
+        updateDownloaded && installerLaunchedProvider() -> "重新開啟安裝畫面"
+        updateDownloaded -> "開啟安裝畫面"
+        downloadFailedProvider() -> "重新下載"
+        else -> "下載並安裝"
+    }
+    val updateStatus = when {
+        isUpdating -> "正在下載並驗證安裝包，完成後會開啟系統安裝畫面"
+        updateDownloaded -> "安裝包已驗證並保留；重試時唔需要再次下載"
+        downloadFailedProvider() -> "下載未完成的檔案已清理，可以安全重新嘗試"
+        else -> "下載後會保留一份已驗證安裝包，安裝成功即自動清理"
+    }
 
     val dialogShape = RoundedCornerShape(28.dp)
 
@@ -95,6 +115,13 @@ fun UpdateContent(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodyLarge,
                     )
+                    if (isUpdateAvailableProvider()) {
+                        Text(
+                            updateStatus,
+                            color = MaterialTheme.colorScheme.tertiary,
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
                 }
             }
 
@@ -128,13 +155,16 @@ fun UpdateContent(
                 horizontalArrangement = Arrangement.spacedBy(14.dp, Alignment.End),
             ) {
                 if (isUpdateAvailableProvider()) {
+                    val primaryAction = {
+                        if (!isUpdating) onUpdateAndInstall()
+                    }
                     WideButton(
                         modifier = Modifier
-                            .width(210.dp)
+                            .width(260.dp)
                             .focusOnLaunched()
-                            .handleKeyEvents(onSelect = onUpdateAndInstall),
-                        onClick = onUpdateAndInstall,
-                        title = { Text("下載並安裝") },
+                            .handleKeyEvents(onSelect = primaryAction),
+                        onClick = primaryAction,
+                        title = { Text(primaryActionLabel) },
                     )
 
                     WideButton(

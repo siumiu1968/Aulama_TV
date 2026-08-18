@@ -19,6 +19,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.tv.material3.MaterialTheme
 import top.yogiczy.mytv.tv.ui.utils.captureBackKey
 import top.yogiczy.mytv.tv.ui.utils.ifElse
+import top.yogiczy.mytv.tv.ui.utils.saveFocusRestorer
 import top.yogiczy.mytv.tv.ui.utils.saveRequestFocus
 import java.util.UUID
 
@@ -63,7 +64,9 @@ fun Modifier.popupable() = composed {
         onDispose { popupManager.pop() }
     }
 
-    focusRequester(focusRequester).focusable()
+    saveFocusRestorer()
+        .focusRequester(focusRequester)
+        .focusable()
 }
 
 @Composable

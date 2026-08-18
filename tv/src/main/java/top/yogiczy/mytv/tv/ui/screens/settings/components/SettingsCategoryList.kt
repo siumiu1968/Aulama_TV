@@ -84,7 +84,7 @@ private fun SettingsCategoryItem(
     val focusManager = LocalFocusManager.current
     val focusRequester = remember { FocusRequester() }
     var isFocused by remember { mutableStateOf(false) }
-    val itemShape = RoundedCornerShape(6.dp)
+    val itemShape = RoundedCornerShape(14.dp)
 
     ListItem(
         shape = ListItemDefaults.shape(
