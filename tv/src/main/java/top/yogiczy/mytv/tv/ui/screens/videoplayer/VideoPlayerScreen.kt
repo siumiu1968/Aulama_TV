@@ -66,8 +66,9 @@ fun VideoPlayerScreen(
             } else {
                 settingsViewModel.videoPlayerRenderMode
             }
+        val outputGeneration = state.videoOutputGeneration
 
-        key(state.videoOutputGeneration, renderMode) {
+        key(outputGeneration, renderMode) {
             when (renderMode) {
                 Configs.VideoPlayerRenderMode.SURFACE_VIEW -> {
                     AndroidView(
@@ -75,7 +76,7 @@ fun VideoPlayerScreen(
                             .align(Alignment.Center)
                             .then(displayModeModifier),
                         factory = { SurfaceView(context) },
-                        update = { state.setVideoSurfaceView(it) },
+                        update = { state.setVideoSurfaceView(it, outputGeneration) },
                     )
                 }
 
@@ -85,7 +86,7 @@ fun VideoPlayerScreen(
                             .align(Alignment.Center)
                             .then(displayModeModifier),
                         factory = { TextureView(context) },
-                        update = { state.setVideoTextureView(it) },
+                        update = { state.setVideoTextureView(it, outputGeneration) },
                     )
                 }
             }
@@ -104,6 +105,9 @@ fun VideoPlayerScreen(
         metadataProvider = state::metadata,
         errorProvider = state::error,
         retryMessageProvider = state::retryMessage,
+        terminalRetryAvailableProvider = state::hasTerminalRetry,
+        playbackForegroundProvider = { state.isPlaybackForeground },
+        onRetry = state::retryTerminalError,
     )
 }
 
@@ -114,6 +118,9 @@ private fun VideoPlayerScreenCover(
     metadataProvider: () -> VideoPlayer.Metadata = { VideoPlayer.Metadata() },
     errorProvider: () -> String? = { null },
     retryMessageProvider: () -> String? = { null },
+    terminalRetryAvailableProvider: () -> Boolean = { false },
+    playbackForegroundProvider: () -> Boolean = { true },
+    onRetry: () -> Unit = {},
 ) {
     val childPadding = rememberChildPadding()
 
@@ -129,6 +136,9 @@ private fun VideoPlayerScreenCover(
             modifier = Modifier.align(Alignment.Center),
             errorProvider = errorProvider,
             retryMessageProvider = retryMessageProvider,
+            terminalRetryAvailableProvider = terminalRetryAvailableProvider,
+            focusRequestKeyProvider = playbackForegroundProvider,
+            onRetry = onRetry,
         )
     }
 }

@@ -245,10 +245,15 @@ class Media3VideoPlayer(
         recentAudioUnderruns.clear()
         currentRoute = route
         val uri = Uri.parse(route.url.let { if (it.endsWith("?")) "${it}t" else it })
-        val mediaSource = getMediaSource(uri, route, contentType)
+        val resolvedContentType = contentType ?: if (isLikelyHlsStreamUrl(route.url)) {
+            C.CONTENT_TYPE_HLS
+        } else {
+            Util.inferContentType(uri)
+        }
+        val mediaSource = getMediaSource(uri, route, resolvedContentType)
 
         if (mediaSource != null) {
-            contentTypeAttempts[contentType ?: Util.inferContentType(uri)] = true
+            contentTypeAttempts[resolvedContentType] = true
             videoPlayer.clearVideoSurface()
             clearVideoOutput()
             videoPlayer.stop()
@@ -286,15 +291,17 @@ class Media3VideoPlayer(
                     }
                 }
 
-                // 當解析容器不支持時，嘗試使用其他解析容器
-                androidx.media3.common.PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED -> {
+                // 非標準直播網址可能沒有副檔名；解析失敗時有限次嘗試其他容器。
+                androidx.media3.common.PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED,
+                androidx.media3.common.PlaybackException.ERROR_CODE_PARSING_MANIFEST_MALFORMED,
+                androidx.media3.common.PlaybackException.ERROR_CODE_PARSING_MANIFEST_UNSUPPORTED -> {
                     videoPlayer.currentMediaItem?.localConfiguration?.uri?.let {
                         if (contentTypeAttempts[C.CONTENT_TYPE_HLS] != true) {
                             currentRoute?.let { route -> prepareInternal(route, C.CONTENT_TYPE_HLS) }
-                        } else if (contentTypeAttempts[C.CONTENT_TYPE_RTSP] != true) {
-                            currentRoute?.let { route -> prepareInternal(route, C.CONTENT_TYPE_RTSP) }
                         } else if (contentTypeAttempts[C.CONTENT_TYPE_OTHER] != true) {
                             currentRoute?.let { route -> prepareInternal(route, C.CONTENT_TYPE_OTHER) }
+                        } else if (contentTypeAttempts[C.CONTENT_TYPE_RTSP] != true) {
+                            currentRoute?.let { route -> prepareInternal(route, C.CONTENT_TYPE_RTSP) }
                         } else {
                             val type = Util.inferContentType(it)
                             triggerError(
@@ -553,9 +560,7 @@ class Media3VideoPlayer(
         private const val MAX_RECOVERABLE_ERROR_RETRIES = 1
         private const val AUDIO_UNDERRUN_LIMIT = 3
         private const val AUDIO_UNDERRUN_WINDOW_MS = 15_000L
-        private const val TVB_AKAMAI_HOST = "prd-vcache.edge-global.akamai.tvb.com"
-
         internal fun requiresTvbHlsSession(route: ChannelRoute): Boolean =
-            Uri.parse(route.url).host.equals(TVB_AKAMAI_HOST, ignoreCase = true)
+            isTvbHlsSessionUrl(route.url)
     }
 }

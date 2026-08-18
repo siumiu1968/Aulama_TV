@@ -15,7 +15,16 @@
   <a href="./LICENSE"><img src="https://img.shields.io/github/license/siumiu1968/Aulama_TV" alt="MIT License" /></a>
 </p>
 
-> 目前正式版本：Android TV `2.6.19-family`、Android 手機 `1.1.3`。
+> 目前正式版本：Android TV `2.6.19-family`、Android 手機 `1.1.3`；Android TV 最新測試版為 `2.6.20-beta.1`。
+
+## 2.6.20 Beta 1 測試重點
+
+- **有限自動恢復**：硬卡死會依次嘗試相容播放器、同線重載及後備線；全部用盡後停止，避免無限黑畫重試。
+- **一鍵重新嘗試**：終端錯誤會顯示遙控器可直接操作嘅重試掣，返回 App 後亦會重新取得焦點。
+- **保留仍有畫面嘅播放器**：低幀率或掉幀只作軟警告，唔再拆走其實仍然出緊畫嘅引擎；真正凍畫仍會即時自救。
+- **非標準 HLS 相容**：已知無 `.m3u8` 副檔名嘅直播網址會直接用 HLS 解析，減少錯誤容器探測同開台延遲。
+- **杜絕舊重試競態**：停止、換線或到達失敗畫面後，舊播放器 callback／延遲任務唔會再偷偷重開。
+- **較合理首幀時間**：1080p 直連等待 15 秒，底層載入逾時延後作安全網，避免兩個 watchdog 同一刻互相打斷。
 
 ## 2.6.19 更新重點
 
@@ -66,8 +75,9 @@
 
 ## 下載
 
-| 平台 | 正式版本 | 下載 |
+| 平台 | 版本 | 下載 |
 | --- | --- | --- |
+| Android TV／Google TV 測試版 | `2.6.20-beta.1` | [下載 Beta APK](https://github.com/siumiu1968/Aulama_TV/releases/download/v2.6.20-beta.1/mytv-android-tv-2.6.20-beta.1-all-sdk21.apk) |
 | Android TV／Google TV | `2.6.19-family` | [下載 APK](https://github.com/siumiu1968/Aulama_TV/releases/download/v2.6.19-family/mytv-android-tv-2.6.19-family-all-sdk21.apk) |
 | Android 手機 | `1.1.3` | [下載 APK](https://github.com/siumiu1968/Aulama_TV/releases/tag/android-v1.1.3) |
 | 網頁版 | 最新版 | [開啟 Aulama IPTV](https://aulama.org/iptv/) |

@@ -49,13 +49,20 @@ internal fun playbackHealthIssue(
         (outputFpsAvailableNow && outputFps >= minimumFps) ||
             (decodeFpsAvailableNow && decodeFps >= minimumFps)
     val positionStalled = progressDelta < PLAYBACK_HEALTH_MIN_PROGRESS_MS
-    if (positionStalled && !hasHealthyFpsEvidence) {
+    if (
+        positionStalled &&
+        !hasHealthyFpsEvidence &&
+        !outputFpsAvailableNow &&
+        !decodeFpsAvailableNow
+    ) {
         return IJKPlaybackHealthIssue.STALLED
     }
 
+    val outputStopped = hasObservedOutputFps && outputFps.isFinite() && outputFps <= 0f
+    if (outputStopped) return IJKPlaybackHealthIssue.STALLED
+
     val outputTooLow = when {
         outputFpsAvailableNow -> outputFps < minimumFps
-        hasObservedOutputFps && outputFps.isFinite() -> outputFps <= 0f
         else -> false
     }
     if (outputTooLow) return IJKPlaybackHealthIssue.SLOW_RENDERING
@@ -118,9 +125,7 @@ class IJKVideoPlayer(
     private fun setOption() {
         ijkPlayer.apply {
             val softwareDecode = useSoftwareDecode
-            val isHls = currentRoute?.url
-                ?.substringBefore('?')
-                ?.endsWith(".m3u8", ignoreCase = true) == true
+            val isHls = currentRoute?.url?.let(::isLikelyHlsStreamUrl) == true
             val timeoutUs = Configs.videoPlayerLoadTimeout * 1_000L
             val analyzeDurationUs = if (softwareDecode) 6_000_000L else 2_000_000L
             val probeSize = if (softwareDecode) 4 * 1024 * 1024L else 1024 * 1024L
@@ -184,6 +189,8 @@ class IJKVideoPlayer(
     
     private var updatePositionJob: Job? = null
     private var playbackHealthJob: Job? = null
+    private var retryJob: Job? = null
+    private var playbackAttemptGeneration = 0L
     private var playbackHealthReported = false
     private var desiredFrameRate = 0f
     private var currentSurface: Surface? = null
@@ -351,10 +358,7 @@ class IJKVideoPlayer(
             // -110 ETIMEDOUT  -138 ENOSYS  均做二次重試
             if ((what == -110 || what == -138) && retryCount < maxRetryCount) {
                 retryCount++
-                coroutineScope.launch {
-                    delay(750)
-                    currentRoute?.let { prepare(it) }
-                }
+                scheduleRetry(750L)
                 return true   // 自己消化掉，不拋到 UI 層
             }
             triggerError(PlaybackException("IJKPlayerError", what))
@@ -388,6 +392,9 @@ class IJKVideoPlayer(
     }
 
     override fun release() {
+        playbackAttemptGeneration += 1
+        retryJob?.cancel()
+        retryJob = null
         updatePositionJob?.cancel()
         playbackHealthJob?.cancel()
         unbindVideoOutput()
@@ -397,13 +404,19 @@ class IJKVideoPlayer(
     }
 
     override fun prepare(route: ChannelRoute) {
+        prepareRoute(route, resetRetryBudget = true)
+    }
+
+    private fun prepareRoute(route: ChannelRoute, resetRetryBudget: Boolean) {
+        playbackAttemptGeneration += 1
+        retryJob?.cancel()
+        retryJob = null
         playbackHealthJob?.cancel()
         playbackHealthReported = false
         applyFrameRateHint(currentSurface, 0f)
         desiredFrameRate = 0f
-        val isNewRoute = currentRoute?.url != route.url
         currentRoute = route
-        if (isNewRoute) retryCount = 0
+        if (resetRetryBudget) retryCount = 0
         try {
             ijkPlayer.reset()
             setOption()
@@ -420,12 +433,20 @@ class IJKVideoPlayer(
         log.e("playback error", e)
         if (retryCount < maxRetryCount) {
             retryCount++
-            coroutineScope.launch {
-                delay(1000 * retryCount.toLong()) // 指數退避
-                currentRoute?.let { prepare(it) }
-            }
+            scheduleRetry(1_000L * retryCount)
         } else {
             triggerError(PlaybackException("PlaybackError", -1))
+        }
+    }
+
+    private fun scheduleRetry(delayMs: Long) {
+        val expectedGeneration = playbackAttemptGeneration
+        retryJob?.cancel()
+        retryJob = coroutineScope.launch {
+            delay(delayMs)
+            if (expectedGeneration != playbackAttemptGeneration) return@launch
+            retryJob = null
+            currentRoute?.let { prepareRoute(it, resetRetryBudget = false) }
         }
     }
 
@@ -449,6 +470,9 @@ class IJKVideoPlayer(
     }
 
     override fun stop() {
+        playbackAttemptGeneration += 1
+        retryJob?.cancel()
+        retryJob = null
         updatePositionJob?.cancel()
         playbackHealthJob?.cancel()
         ijkPlayer.stop()

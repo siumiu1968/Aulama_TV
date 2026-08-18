@@ -58,23 +58,54 @@ import kotlin.math.max
 import kotlin.math.min
 
 private const val STABLE_WATCH_SAMPLE_MS = 60_000L
+private const val STABLE_WATCH_POLL_MS = 5_000L
 private const val STABLE_WATCH_FINAL_CREDIT_MS = 45_000L
 private const val QUICK_ROUTE_EXIT_MS = 25_000L
 private const val RELAY_RESOLUTION_TIMEOUT_MS = 4_000L
-private const val SAME_CANDIDATE_RELOAD_COOLDOWN_MS = 120_000L
 private const val SAME_CANDIDATE_RELOAD_DELAY_MS = 260L
 private val SUPER_ADMIN_TRANSPORT_IDS = listOf("hk_relay", "jp_relay", "direct")
 
 internal fun requiresImmediatePlaybackRecovery(reason: String): Boolean = when (reason) {
     IptvPlaybackHealthPolicy.reasonCode(IptvDegradationReason.FirstFrameTimeout),
     IptvPlaybackHealthPolicy.reasonCode(IptvDegradationReason.LongRebuffer),
-    "slow-rendering",
-    "dropped-frames",
     "audio-underrun",
     "ijk-playback-stalled",
-    "ijk-decode-stalled",
-    "ijk-slow-rendering" -> true
+    "ijk-decode-stalled" -> true
     else -> false
+}
+
+internal fun shouldReloadCurrentCandidate(reason: String): Boolean =
+    requiresImmediatePlaybackRecovery(reason) &&
+        reason != IptvPlaybackHealthPolicy.reasonCode(IptvDegradationReason.FirstFrameTimeout)
+
+internal class PlaybackRecoveryBudget {
+    private val reloadedCandidates = mutableSetOf<String>()
+
+    fun tryUseCandidateReload(healthKey: String): Boolean =
+        healthKey.isNotBlank() && reloadedCandidates.add(healthKey)
+
+    fun restoreCandidateReload(healthKey: String) {
+        reloadedCandidates.remove(healthKey)
+    }
+
+    fun reset() {
+        reloadedCandidates.clear()
+    }
+}
+
+internal class SoftDegradationNoticeBudget {
+    private val notifiedCandidates = mutableSetOf<String>()
+
+    fun tryNotify(healthKey: String): Boolean =
+        healthKey.isNotBlank() && notifiedCandidates.add(healthKey)
+
+    fun restore(healthKey: String) {
+        notifiedCandidates.remove(healthKey)
+    }
+
+    fun reset() {
+        notifiedCandidates.clear()
+    }
 }
 
 @Stable
@@ -109,7 +140,9 @@ class MainContentState(
     private var routeSuccessRecorded = false
     private var stableWatchLearningJob: Job? = null
     private var lastFailureHandledKey: String? = null
-    private val lastCandidateReloadAt = mutableMapOf<String, Long>()
+    private val recoveryBudget = PlaybackRecoveryBudget()
+    private val softDegradationNoticeBudget = SoftDegradationNoticeBudget()
+    private var recoveryGeneration = 0L
     private val supportsHdrOutput by lazy {
         IptvDisplayCapabilities.supportsHdrOutput(context)
     }
@@ -185,6 +218,7 @@ class MainContentState(
                     override fun onReceive(ctx: Context, intent: Intent) {
                         if (intent.action == "top.yogiczy.mytv.tv.RESTART_PLAY") {
                             finishCurrentWatchSession()
+                            resetPlaybackRecoveryBudget()
                             prepareCurrentRoute()
                         }
                     }
@@ -234,11 +268,16 @@ class MainContentState(
             val failedRoute = currentRouteOrNull() ?: return@onPlaybackDegraded
             val failedHealthKey = currentPlaybackHealthKey()
             if (lastFailureHandledKey == failedHealthKey) return@onPlaybackDegraded
+            val mustRecover = requiresImmediatePlaybackRecovery(reason)
+            if (!mustRecover && !softDegradationNoticeBudget.tryNotify(failedHealthKey)) {
+                videoPlayerState.keepCurrentRoute()
+                startStableWatchLearning(failedHealthKey)
+                return@onPlaybackDegraded
+            }
             lastFailureHandledKey = failedHealthKey
             finishCurrentWatchSession()
-            val mustRecover = requiresImmediatePlaybackRecovery(reason)
             if (
-                mustRecover &&
+                shouldReloadCurrentCandidate(reason) &&
                 scheduleSameCandidateReload(failedHealthKey)
             ) {
                 Snackbar.show("播放停頓，原線重試中")
@@ -256,24 +295,22 @@ class MainContentState(
                 Snackbar.show("畫面播放唔順，已自動切換${target}線路")
                 log.w("線路播放質素下降（$reason），自動切換：${failedRoute.url}")
             } else if (mustRecover) {
-                Snackbar.show("未有後備線路，已重新載入目前線路")
-                log.w("播放停頓（$reason），未有後備線路，重新載入：${failedRoute.url}")
-                prepareCurrentRoute(retrying = true)
+                showPlaybackExhausted(reason)
             } else {
                 lastFailureHandledKey = null
                 videoPlayerState.keepCurrentRoute()
+                startStableWatchLearning(failedHealthKey)
                 Snackbar.show("未有明顯更佳線路，暫時保留目前播放")
                 log.w("線路播放質素下降（$reason），後備線路未高出 20 分：${failedRoute.url}")
             }
         }
 
-        videoPlayerState.onError { _ ->
+        videoPlayerState.onError { error ->
             val failedRoute = currentRouteOrNull() ?: return@onError false
             val failedHealthKey = currentPlaybackHealthKey()
-            if (lastFailureHandledKey == failedHealthKey) return@onError false
+            if (lastFailureHandledKey == failedHealthKey) return@onError true
             lastFailureHandledKey = failedHealthKey
             finishCurrentWatchSession()
-            if (scheduleSameCandidateReload(failedHealthKey)) return@onError true
 
             IptvRouteHealthStore.markFailure(failedHealthKey)
             if (currentPlaybackTransport() == AulamaPlaybackTransport.DIRECT) {
@@ -286,7 +323,12 @@ class MainContentState(
                 return@onError true
             }
 
-            playNextRoute(forceSwitch = true)
+            if (playNextRoute(forceSwitch = true)) {
+                true
+            } else {
+                showPlaybackExhausted(error)
+                true
+            }
         }
 
         videoPlayerState.onInterrupt {
@@ -302,7 +344,7 @@ class MainContentState(
                     settingsViewModel.iptvPlayableHostList -= getUrlHost(route.url)
                 }
             }
-            if (!playNextRoute(forceSwitch = true)) prepareCurrentRoute(retrying = true)
+            if (!playNextRoute(forceSwitch = true)) showPlaybackExhausted("playback-interrupted")
         }
     }
 
@@ -399,26 +441,29 @@ class MainContentState(
         // backups and contradict the manual fallback order.
         if (currentRouteOrNull()?.quality == ChannelQuality.UHD_4K) return false
 
-        val now = System.currentTimeMillis()
-        lastCandidateReloadAt.entries.removeAll {
-            now - it.value >= SAME_CANDIDATE_RELOAD_COOLDOWN_MS
-        }
-        if (lastCandidateReloadAt.containsKey(healthKey)) return false
-        lastCandidateReloadAt[healthKey] = now
+        if (!recoveryBudget.tryUseCandidateReload(healthKey)) return false
 
         val channelName = _currentChannel.name
         val routeUrl = currentRouteOrNull()?.url ?: return false
         val attemptCursor = transportAttemptCursor
+        val expectedRecoveryGeneration = recoveryGeneration
         videoPlayerState.showRetryNotice("播放有波動，原線重試中")
         coroutineScope.launch {
             delay(SAME_CANDIDATE_RELOAD_DELAY_MS)
             val baseRoute = currentRouteOrNull() ?: return@launch
-            if (
-                _currentChannel.name != channelName ||
-                baseRoute.url != routeUrl ||
-                transportAttemptCursor != attemptCursor ||
-                currentPlaybackHealthKey() != healthKey
-            ) return@launch
+            val stillCurrentAttempt =
+                recoveryGeneration == expectedRecoveryGeneration &&
+                videoPlayerState.isPlaybackForeground &&
+                _currentChannel.name == channelName &&
+                baseRoute.url == routeUrl &&
+                transportAttemptCursor == attemptCursor &&
+                currentPlaybackHealthKey() == healthKey
+            if (!stillCurrentAttempt) {
+                if (recoveryGeneration == expectedRecoveryGeneration) {
+                    recoveryBudget.restoreCandidateReload(healthKey)
+                }
+                return@launch
+            }
 
             lastFailureHandledKey = null
             prepareTransportAttempt(
@@ -433,20 +478,21 @@ class MainContentState(
     private fun startStableWatchLearning(healthKey: String) {
         stableWatchLearningJob?.cancel()
         stableWatchLearningJob = coroutineScope.launch {
+            var creditedContinuousMs = 0L
             while (currentPlaybackHealthKey() == healthKey) {
-                delay(STABLE_WATCH_SAMPLE_MS)
-                if (
-                    currentPlaybackHealthKey() == healthKey &&
-                    videoPlayerState.hasRenderedFirstFrame &&
-                    videoPlayerState.isPlaying &&
-                    !videoPlayerState.isBuffering
-                ) {
+                delay(STABLE_WATCH_POLL_MS)
+                val continuousHealthyMs = videoPlayerState.continuousHealthyPlaybackMs()
+                if (continuousHealthyMs < creditedContinuousMs) creditedContinuousMs = 0L
+                if (continuousHealthyMs >= creditedContinuousMs + STABLE_WATCH_SAMPLE_MS) {
                     IptvRouteHealthStore.markStableWatch(
                         healthKey,
                         STABLE_WATCH_SAMPLE_MS,
                         playbackMode = videoPlayerState.playbackMode,
                     )
                     routeWatchCreditedMs += STABLE_WATCH_SAMPLE_MS
+                    creditedContinuousMs += STABLE_WATCH_SAMPLE_MS
+                    recoveryBudget.restoreCandidateReload(healthKey)
+                    softDegradationNoticeBudget.restore(healthKey)
                 }
             }
         }
@@ -474,6 +520,31 @@ class MainContentState(
         routeFirstFrameAt = 0L
         routeWatchCreditedMs = 0L
         routeSuccessRecorded = false
+    }
+
+    private fun resetPlaybackRecoveryBudget() {
+        recoveryGeneration += 1
+        recoveryBudget.reset()
+        softDegradationNoticeBudget.reset()
+        lastFailureHandledKey = null
+    }
+
+    private fun showPlaybackExhausted(reason: String) {
+        val route = currentRouteOrNull()
+        log.w("所有播放候選已用盡（$reason）：host=${getUrlHost(route?.url.orEmpty())}")
+        videoPlayerState.showTerminalError(
+            message = "所有可用線路暫時無法播放，請重新嘗試或切換頻道",
+            onRetry = ::retryPlaybackSession,
+        )
+    }
+
+    private fun retryPlaybackSession() {
+        resetPlaybackRecoveryBudget()
+        finishCurrentWatchSession()
+        routeAttemptOrder = buildRouteAttemptOrder(_currentChannel, requestedIndex = null)
+        routeAttemptCursor = 0
+        _currentChannelUrlIdx = routeAttemptOrder.firstOrNull() ?: return
+        prepareCurrentRoute(retrying = true)
     }
 
     private fun buildRouteAttemptOrder(
@@ -737,6 +808,8 @@ class MainContentState(
             playbackEpgProgramme == _currentPlaybackEpgProgramme
         ) return
 
+        if (!retrying) resetPlaybackRecoveryBudget()
+
         val isManualRouteChange = !retrying &&
             channel.name == _currentChannel.name &&
             urlIdx != null &&
@@ -776,6 +849,7 @@ class MainContentState(
     }
 
     fun refreshCurrentChannel() {
+        if (videoPlayerState.hasTerminalRetry) return
         finishCurrentWatchSession()
         prepareCurrentRoute()
     }
@@ -792,6 +866,7 @@ class MainContentState(
             ?: AulamaPlaybackPolicy.AUTO_PREFERENCE_ID
         Snackbar.show(AulamaPlaybackPolicy.preferenceLabel(_playbackTransportPreferenceId))
         finishCurrentWatchSession()
+        resetPlaybackRecoveryBudget()
         prepareCurrentRoute(retrying = true)
     }
 

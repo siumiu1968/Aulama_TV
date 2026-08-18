@@ -24,7 +24,7 @@ class IptvPlaybackHealthPolicyTest {
             ),
         )
         assertEquals(
-            12_000L,
+            15_000L,
             IptvPlaybackHealthPolicy.firstFrameTimeoutMsFor(
                 quality = ChannelQuality.FULL_HD,
                 isRelay = false,
@@ -33,13 +33,13 @@ class IptvPlaybackHealthPolicyTest {
     }
 
     @Test
-    fun `first frame is degraded only after twelve seconds`() {
+    fun `first frame is degraded only after fifteen seconds`() {
         val state = IptvPlaybackHealthPolicy.start(1_000L)
 
-        assertNull(IptvPlaybackHealthPolicy.evaluate(state, 12_999L))
+        assertNull(IptvPlaybackHealthPolicy.evaluate(state, 15_999L))
         assertEquals(
             IptvDegradationReason.FirstFrameTimeout,
-            IptvPlaybackHealthPolicy.evaluate(state, 13_000L),
+            IptvPlaybackHealthPolicy.evaluate(state, 16_000L),
         )
     }
 

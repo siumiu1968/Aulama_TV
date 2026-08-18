@@ -1,6 +1,7 @@
 package top.yogiczy.mytv.tv.ui.screens.videoplayer.player
 
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -26,6 +27,47 @@ class IJKPlaybackHealthTest {
                 outputFps = 0f,
                 decodeFps = 25f,
                 progressDelta = 3_000L,
+                minimumFps = 8f,
+                hasObservedOutputFps = true,
+                hasObservedDecodeFps = true,
+            ),
+        )
+        assertEquals(
+            IJKPlaybackHealthIssue.STALLED,
+            playbackHealthIssue(
+                outputFps = 0f,
+                decodeFps = 25f,
+                progressDelta = 3_000L,
+                minimumFps = 8f,
+                hasObservedOutputFps = true,
+                hasObservedDecodeFps = true,
+            ),
+        )
+    }
+
+    @Test
+    fun `low but nonzero output fps remains a soft rendering issue`() {
+        assertEquals(
+            IJKPlaybackHealthIssue.SLOW_RENDERING,
+            playbackHealthIssue(
+                outputFps = 4f,
+                decodeFps = 25f,
+                progressDelta = 3_000L,
+                minimumFps = 8f,
+                hasObservedOutputFps = true,
+                hasObservedDecodeFps = true,
+            ),
+        )
+    }
+
+    @Test
+    fun `slow live timeline with nonzero fps remains a soft rendering issue`() {
+        assertEquals(
+            IJKPlaybackHealthIssue.SLOW_RENDERING,
+            playbackHealthIssue(
+                outputFps = 4f,
+                decodeFps = 6f,
+                progressDelta = 700L,
                 minimumFps = 8f,
                 hasObservedOutputFps = true,
                 hasObservedDecodeFps = true,

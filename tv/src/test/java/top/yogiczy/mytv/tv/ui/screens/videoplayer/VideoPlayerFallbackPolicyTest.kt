@@ -10,6 +10,11 @@ import top.yogiczy.mytv.tv.ui.utils.IptvPlaybackMode
 
 class VideoPlayerFallbackPolicyTest {
     @Test
+    fun `engine timeout remains a delayed safety net after health deadline`() {
+        assertEquals(20_000L, engineFirstFrameTimeoutMs(15_000L))
+    }
+
+    @Test
     fun `network and timeout failures move to next transport`() {
         assertFalse(shouldTryPlaybackModeFallback("LOAD_TIMEOUT", 10003))
         assertFalse(shouldTryPlaybackModeFallback("ERROR_CODE_IO_UNSPECIFIED", 2001))
@@ -99,5 +104,16 @@ class VideoPlayerFallbackPolicyTest {
             listOf(IptvPlaybackMode.MEDIA3, IptvPlaybackMode.IJK_SOFTWARE),
             playbackModeFallbackCandidates(ChannelQuality.FULL_HD, IptvPlaybackMode.IJK),
         )
+    }
+
+    @Test
+    fun `low fps keeps rendering while hard stalls can change engine`() {
+        assertFalse(shouldTryPlaybackModeFallbackForDegradation("ijk-slow-rendering"))
+        assertFalse(shouldTryPlaybackModeFallbackForDegradation("ijk-av-sync-drift"))
+        assertFalse(shouldTryPlaybackModeFallbackForDegradation("slow-rendering"))
+        assertFalse(shouldTryPlaybackModeFallbackForDegradation("dropped-frames"))
+        assertTrue(shouldTryPlaybackModeFallbackForDegradation("ijk-playback-stalled"))
+        assertTrue(shouldTryPlaybackModeFallbackForDegradation("ijk-decode-stalled"))
+        assertTrue(shouldTryPlaybackModeFallbackForDegradation("audio-underrun"))
     }
 }

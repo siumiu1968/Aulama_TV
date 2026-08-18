@@ -89,7 +89,8 @@ fun MainContent(
         mainContentState.isQuickOpScreenVisible ||
         mainContentState.isEpgScreenVisible ||
         mainContentState.isChannelUrlScreenVisible ||
-        mainContentState.isVideoPlayerDisplayModeScreenVisible
+        mainContentState.isVideoPlayerDisplayModeScreenVisible ||
+        videoPlayerState.hasTerminalRetry
 
     // 監聽生命週期：從後台回到前台時立即刷新當前頻道
     DisposableEffect(lifecycleOwner) {

@@ -22,6 +22,10 @@ abstract class VideoPlayer(
     }
 
     open fun release() {
+        loadTimeoutJob?.cancel()
+        interruptJob?.cancel()
+        loadTimeoutJob = null
+        interruptJob = null
         clearAllListeners()
     }
 

@@ -99,6 +99,53 @@ internal fun playbackModeFallbackCandidates(
     }
 }
 
+internal fun shouldTryPlaybackModeFallbackForDegradation(reason: String): Boolean = reason !in setOf(
+    "ijk-slow-rendering",
+    "ijk-av-sync-drift",
+    "slow-rendering",
+    "dropped-frames",
+)
+
+internal fun updatedContinuousHealthStartMs(
+    previousStartMs: Long,
+    nowMs: Long,
+    healthy: Boolean,
+): Long = when {
+    !healthy -> 0L
+    previousStartMs > 0L -> previousStartMs
+    else -> nowMs
+}
+
+internal fun continuousHealthyDurationMs(
+    healthyStartMs: Long,
+    nowMs: Long,
+    healthy: Boolean,
+): Long = if (healthy && healthyStartMs > 0L) {
+    (nowMs - healthyStartMs).coerceAtLeast(0L)
+} else {
+    0L
+}
+
+internal fun engineFirstFrameTimeoutMs(healthDeadlineMs: Long): Long =
+    healthDeadlineMs.coerceAtLeast(1_000L) + 5_000L
+
+/** A callback may mutate state only for the current physical player session. */
+internal fun acceptsPlayerSessionCallback(
+    sourceSession: Long,
+    activeSession: Long,
+    hasTerminalRetry: Boolean,
+): Boolean = sourceSession == activeSession && !hasTerminalRetry
+
+internal fun acceptsPendingPlayerPrepare(
+    pendingSession: Long?,
+    activeSession: Long,
+): Boolean = pendingSession == activeSession
+
+internal fun acceptsVideoOutputGeneration(
+    sourceGeneration: Int,
+    activeGeneration: Int,
+): Boolean = sourceGeneration == activeGeneration
+
 @Stable
 class VideoPlayerState(
     private var instance: VideoPlayer,
@@ -109,6 +156,7 @@ class VideoPlayerState(
 ) {
     private var currentRoute: ChannelRoute? = null
     private var pendingPrepareRoute: ChannelRoute? = null
+    private var pendingPrepareSession: Long? = null
     private var currentSurface: SurfaceView? = null
     private var currentTexture: TextureView? = null
     private var activePlayerType = when (instance) {
@@ -119,6 +167,7 @@ class VideoPlayerState(
     private var activeLeTvVendorPlayer = instance is LeTvVideoPlayer
     private var initialized = false
     private var playbackGeneration = 0
+    private var activePlayerSession = 0L
     private var fourKFallbackRouteUrl: String? = null
     private val attemptedPlaybackModes = mutableSetOf<IptvPlaybackMode>()
     private var bufferingHealthJob: Job? = null
@@ -128,7 +177,11 @@ class VideoPlayerState(
         IptvPlaybackHealthPolicy.start(0L)
     private var currentFirstFrameTimeoutMs = IptvPlaybackHealthPolicy.firstFrameTimeoutMs
     private var degradedReported = false
-    private var isAppForeground = false
+    private var appInForeground by mutableStateOf(false)
+    private var terminalRetryAction: (() -> Unit)? = null
+    private var continuousHealthStartMs = 0L
+    val isPlaybackForeground: Boolean
+        get() = appInForeground
     /** 顯示模式 */
     var displayMode by mutableStateOf(defaultDisplayModeProvider())
 
@@ -141,6 +194,9 @@ class VideoPlayerState(
 
     /** 播放器仍在自動切換引擎或後備線路，未到最終失敗。 */
     var retryMessage by mutableStateOf<String?>(null)
+        private set
+
+    var hasTerminalRetry by mutableStateOf(false)
         private set
 
     /** 正在緩衝 */
@@ -192,6 +248,9 @@ class VideoPlayerState(
         firstFrameTimeoutMs: Long = IptvPlaybackHealthPolicy.firstFrameTimeoutMs,
     ) {
         if (!initialized) initialize()
+        // Reject a callback posted by the previous attempt before terminal state is cleared.
+        activePlayerSession += 1
+        clearTerminalRetry()
         if (currentRoute?.url != route.url) {
             fourKFallbackRouteUrl = null
         }
@@ -217,12 +276,13 @@ class VideoPlayerState(
         retryMessage = if (retrying) "自動重試中" else null
         hasRenderedFirstFrame = false
         isBuffering = true
+        continuousHealthStartMs = 0L
         attemptedPlaybackModes += mode
         prepareWithMode(route, mode)
     }
 
     fun play() {
-        if (isAppForeground) instance.play()
+        if (appInForeground && !hasTerminalRetry) instance.play()
     }
 
     fun pause() {
@@ -230,14 +290,15 @@ class VideoPlayerState(
     }
 
     fun setAppForeground(foreground: Boolean) {
-        isAppForeground = foreground
+        appInForeground = foreground
         instance.setPlaybackAllowed(foreground)
-        if (foreground && currentRoute != null) {
+        if (foreground && currentRoute != null && !hasTerminalRetry) {
             instance.play()
             if (isBuffering && hasRenderedFirstFrame) scheduleLongRebufferEvaluation()
         } else {
             bufferingHealthJob?.cancel()
         }
+        updateContinuousHealth()
     }
 
     fun seekTo(position: Long) {
@@ -245,31 +306,48 @@ class VideoPlayerState(
     }
 
     fun stop() {
+        stopPlayback(clearTerminalRetry = true)
+    }
+
+    private fun stopPlayback(clearTerminalRetry: Boolean) {
+        // A stopped player may still dispatch native callbacks after terminal retry is cleared.
+        activePlayerSession += 1
         playbackGeneration += 1
         bufferingHealthJob?.cancel()
         firstFrameHealthJob?.cancel()
         ratioHealthJob?.cancel()
         hasRenderedFirstFrame = false
         isBuffering = false
+        continuousHealthStartMs = 0L
         error = null
         retryMessage = null
+        if (clearTerminalRetry) clearTerminalRetry()
         pendingPrepareRoute = null
+        pendingPrepareSession = null
         instance.stop()
     }
 
     fun showRetryNotice(message: String) {
+        clearTerminalRetry()
         error = null
         retryMessage = message
         isBuffering = true
+        continuousHealthStartMs = 0L
     }
 
     fun keepCurrentRoute() {
+        clearTerminalRetry()
         retryMessage = null
         error = null
         if (!hasRenderedFirstFrame) return
 
         degradedReported = false
         val now = System.currentTimeMillis()
+        continuousHealthStartMs = updatedContinuousHealthStartMs(
+            previousStartMs = 0L,
+            nowMs = now,
+            healthy = hasRenderedFirstFrame && isPlaying && !isBuffering,
+        )
         playbackHealthWindow = IptvPlaybackHealthPolicy.onFirstFrame(
             IptvPlaybackHealthPolicy.start(now),
             now,
@@ -286,15 +364,62 @@ class VideoPlayerState(
         instance.restartPlaybackHealthMonitoring()
     }
 
-    fun setVideoSurfaceView(surfaceView: SurfaceView) {
+    fun showTerminalError(message: String, onRetry: () -> Unit) {
+        terminalRetryAction = onRetry
+        hasTerminalRetry = true
+        stopPlayback(clearTerminalRetry = false)
+        error = message
+        retryMessage = null
+        isPlaying = false
+        isBuffering = false
+        continuousHealthStartMs = 0L
+    }
+
+    fun retryTerminalError() {
+        val retry = terminalRetryAction ?: return
+        clearTerminalRetry()
+        error = null
+        retry()
+    }
+
+    private fun clearTerminalRetry() {
+        terminalRetryAction = null
+        hasTerminalRetry = false
+    }
+
+    fun continuousHealthyPlaybackMs(nowMs: Long = System.currentTimeMillis()): Long =
+        continuousHealthyDurationMs(
+            healthyStartMs = continuousHealthStartMs,
+            nowMs = nowMs,
+            healthy = hasRenderedFirstFrame && isPlaying && !isBuffering &&
+                !degradedReported && !hasTerminalRetry,
+        )
+
+    private fun updateContinuousHealth(nowMs: Long = System.currentTimeMillis()) {
+        continuousHealthStartMs = updatedContinuousHealthStartMs(
+            previousStartMs = continuousHealthStartMs,
+            nowMs = nowMs,
+            healthy = hasRenderedFirstFrame && isPlaying && !isBuffering &&
+                !degradedReported && !hasTerminalRetry,
+        )
+    }
+
+    fun setVideoSurfaceView(
+        surfaceView: SurfaceView,
+        outputGeneration: Int = videoOutputGeneration,
+    ) {
+        if (!acceptsVideoOutputGeneration(outputGeneration, videoOutputGeneration)) return
         currentSurface = surfaceView
         currentTexture = null
         instance.setVideoSurfaceView(surfaceView)
         preparePendingRoute()
     }
 
-    fun setVideoTextureView(textureView: TextureView) {
-        if (requiresSurfaceView) return
+    fun setVideoTextureView(
+        textureView: TextureView,
+        outputGeneration: Int = videoOutputGeneration,
+    ) {
+        if (requiresSurfaceView || !acceptsVideoOutputGeneration(outputGeneration, videoOutputGeneration)) return
         currentTexture = textureView
         currentSurface = null
         instance.setVideoTextureView(textureView)
@@ -338,6 +463,7 @@ class VideoPlayerState(
             tryPlaybackModeFallback()
         ) return
         degradedReported = true
+        continuousHealthStartMs = 0L
         bufferingHealthJob?.cancel()
         firstFrameHealthJob?.cancel()
         ratioHealthJob?.cancel()
@@ -389,14 +515,14 @@ class VideoPlayerState(
 
     private fun scheduleLongRebufferEvaluation() {
         bufferingHealthJob?.cancel()
-        if (!isAppForeground || !isBuffering || !hasRenderedFirstFrame || degradedReported) return
+        if (!appInForeground || !isBuffering || !hasRenderedFirstFrame || degradedReported) return
 
         val generation = playbackGeneration
         bufferingHealthJob = coroutineScope.launch {
             delay(IptvPlaybackHealthPolicy.longRebufferTimeoutMs)
             if (
                 generation != playbackGeneration ||
-                !isAppForeground ||
+                !appInForeground ||
                 !isBuffering ||
                 !hasRenderedFirstFrame ||
                 degradedReported
@@ -423,11 +549,16 @@ class VideoPlayerState(
         }
 
         playbackGeneration += 1
+        val fallbackGeneration = playbackGeneration
+        // The replacement runs on the next main-loop turn. Invalidate the source now so a
+        // second queued native callback cannot consume another mode or jump to terminal state.
+        activePlayerSession += 1
         bufferingHealthJob?.cancel()
         resetPlaybackHealthWindow()
         degradedReported = false
         hasRenderedFirstFrame = false
         isBuffering = true
+        continuousHealthStartMs = 0L
         error = null
         retryMessage = if (nextMode == IptvPlaybackMode.IJK_SOFTWARE) {
             "正在啟用兼容解碼"
@@ -436,6 +567,8 @@ class VideoPlayerState(
         }
         coroutineScope.launch {
             if (
+                fallbackGeneration == playbackGeneration &&
+                !hasTerminalRetry &&
                 currentRoute?.url == route.url &&
                 playbackMode == previousMode
             ) {
@@ -481,27 +614,31 @@ class VideoPlayerState(
     private fun prepareWithMode(route: ChannelRoute, mode: IptvPlaybackMode) {
         requiresSurfaceView = route.quality == ChannelQuality.UHD_4K ||
             mode == IptvPlaybackMode.MEDIA3
-        val switchedPlayer = switchPlayerIfNeeded(mode)
-        instance.setFirstFrameTimeoutMs(currentFirstFrameTimeoutMs)
-        if (switchedPlayer) {
-            pendingPrepareRoute = route
-        } else {
-            pendingPrepareRoute = null
-            instance.prepare(route)
-        }
+        replacePlayerForSession(mode)
+        // VideoPlayerState owns route-aware engine fallback. Keep the lower-level
+        // player watchdog as a delayed safety net so both timers cannot fire in
+        // the same frame and race terminal state against a new engine.
+        instance.setFirstFrameTimeoutMs(engineFirstFrameTimeoutMs(currentFirstFrameTimeoutMs))
+        pendingPrepareRoute = route
+        pendingPrepareSession = activePlayerSession
     }
 
     private fun preparePendingRoute() {
         val route = pendingPrepareRoute ?: return
-        if (currentRoute?.url != route.url) {
+        if (
+            currentRoute?.url != route.url ||
+            !acceptsPendingPlayerPrepare(pendingPrepareSession, activePlayerSession)
+        ) {
             pendingPrepareRoute = null
+            pendingPrepareSession = null
             return
         }
         pendingPrepareRoute = null
+        pendingPrepareSession = null
         instance.prepare(route)
     }
 
-    private fun switchPlayerIfNeeded(mode: IptvPlaybackMode): Boolean {
+    private fun replacePlayerForSession(mode: IptvPlaybackMode) {
         val type = when (mode) {
             IptvPlaybackMode.IJK,
             IptvPlaybackMode.IJK_SOFTWARE -> Configs.VideoPlayerType.IJK
@@ -509,17 +646,8 @@ class VideoPlayerState(
         }
         val softwareDecode = mode == IptvPlaybackMode.IJK_SOFTWARE
         val useLeTvVendorPlayer = shouldUseLeTvVendorPlayer(mode)
-        if (
-            activePlayerType == type &&
-            (
-                type != Configs.VideoPlayerType.IJK ||
-                    (
-                        activeIJKSoftwareDecode == softwareDecode &&
-                            activeLeTvVendorPlayer == useLeTvVendorPlayer
-                        )
-                )
-        ) return false
-
+        // Invalidate callbacks before teardown: native players can post a final event here.
+        activePlayerSession += 1
         instance.release()
         currentSurface = null
         currentTexture = null
@@ -528,17 +656,23 @@ class VideoPlayerState(
         activePlayerType = type
         activeIJKSoftwareDecode = softwareDecode
         activeLeTvVendorPlayer = useLeTvVendorPlayer
-        instance.setPlaybackAllowed(isAppForeground)
+        instance.setPlaybackAllowed(appInForeground)
         if (initialized) configureInstance()
-        return true
     }
 
     private fun configureInstance() {
-        instance.initialize()
-        instance.onResolution { width, height ->
+        val source = instance
+        val sourceSession = activePlayerSession
+        fun acceptsSourceCallback(): Boolean = source === instance &&
+            acceptsPlayerSessionCallback(sourceSession, activePlayerSession, hasTerminalRetry)
+
+        source.initialize()
+        source.onResolution { width, height ->
+            if (!acceptsSourceCallback()) return@onResolution
             if (width > 0 && height > 0) aspectRatio = width.toFloat() / height
         }
-        instance.onError playerError@ { ex ->
+        source.onError playerError@ { ex ->
+            if (!acceptsSourceCallback()) return@playerError
             val route = currentRoute
             if (
                 ex != null &&
@@ -546,13 +680,22 @@ class VideoPlayerState(
                 activeLeTvVendorPlayer &&
                 fourKFallbackRouteUrl != route.url
             ) {
+                playbackGeneration += 1
+                val vendorFallbackGeneration = playbackGeneration
+                activePlayerSession += 1
+                bufferingHealthJob?.cancel()
+                firstFrameHealthJob?.cancel()
+                ratioHealthJob?.cancel()
                 fourKFallbackRouteUrl = route.url
                 hasRenderedFirstFrame = false
                 isBuffering = true
+                continuousHealthStartMs = 0L
                 error = null
                 retryMessage = "正在切換兼容 4K 播放"
                 coroutineScope.launch {
                     if (
+                        vendorFallbackGeneration == playbackGeneration &&
+                        !hasTerminalRetry &&
                         currentRoute?.url == route.url &&
                         activeLeTvVendorPlayer
                     ) {
@@ -577,6 +720,7 @@ class VideoPlayerState(
             }
 
             hasRenderedFirstFrame = false
+            continuousHealthStartMs = 0L
             val message = ex?.let { "${it.errorCodeName}(${it.errorCode})" }
             error = null
             retryMessage = message?.let { "自動重試中" }
@@ -587,13 +731,16 @@ class VideoPlayerState(
             }
 
         }
-        instance.onReady {
+        source.onReady {
+            if (!acceptsSourceCallback()) return@onReady
             onReadyListeners.forEach { it.invoke() }
             error = null
             displayMode = defaultDisplayModeProvider()
         }
-        instance.onBuffering {
+        source.onBuffering {
+            if (!acceptsSourceCallback()) return@onBuffering
             isBuffering = it
+            updateContinuousHealth()
             if (it) error = null
             if (!it) bufferingHealthJob?.cancel()
             val now = System.currentTimeMillis()
@@ -612,8 +759,11 @@ class VideoPlayerState(
                 scheduleLongRebufferEvaluation()
             }
         }
-        instance.onPrepared { }
-        instance.onFirstFrame {
+        source.onPrepared {
+            if (!acceptsSourceCallback()) return@onPrepared
+        }
+        source.onFirstFrame {
+            if (!acceptsSourceCallback()) return@onFirstFrame
             bufferingHealthJob?.cancel()
             firstFrameHealthJob?.cancel()
             playbackHealthWindow = IptvPlaybackHealthPolicy.onFirstFrame(
@@ -623,20 +773,35 @@ class VideoPlayerState(
             scheduleBufferRatioEvaluation()
             hasRenderedFirstFrame = true
             isBuffering = false
+            updateContinuousHealth()
             error = null
             retryMessage = null
             onFirstFrameListeners.forEach { it.invoke() }
         }
-        instance.onIsPlayingChanged { playing ->
-            if (playing && !isAppForeground) instance.pause()
-            isPlaying = playing && isAppForeground
+        source.onIsPlayingChanged { playing ->
+            if (!acceptsSourceCallback()) return@onIsPlayingChanged
+            if (playing && !appInForeground) source.pause()
+            isPlaying = playing && appInForeground
+            updateContinuousHealth()
         }
-        instance.onDurationChanged { duration = it }
-        instance.onCurrentPositionChanged { currentPosition = it }
-        instance.onMetadata { metadata = it }
-        instance.onInterrupt { onInterruptListeners.forEach { it.invoke() } }
-        instance.onPlaybackDegraded { reason ->
-            reportPlaybackDegraded(reason, allowPlaybackModeFallback = true)
+        source.onDurationChanged {
+            if (acceptsSourceCallback()) duration = it
+        }
+        source.onCurrentPositionChanged {
+            if (acceptsSourceCallback()) currentPosition = it
+        }
+        source.onMetadata {
+            if (acceptsSourceCallback()) metadata = it
+        }
+        source.onInterrupt {
+            if (acceptsSourceCallback()) onInterruptListeners.forEach { it.invoke() }
+        }
+        source.onPlaybackDegraded { reason ->
+            if (!acceptsSourceCallback()) return@onPlaybackDegraded
+            reportPlaybackDegraded(
+                reason,
+                allowPlaybackModeFallback = shouldTryPlaybackModeFallbackForDegradation(reason),
+            )
         }
     }
 
@@ -658,6 +823,7 @@ class VideoPlayerState(
 
     fun release() {
         initialized = false
+        activePlayerSession += 1
         settingsViewModel.onVideoPlayerTypeChanged = null
         onReadyListeners.clear()
         onFirstFrameListeners.clear()
@@ -668,6 +834,8 @@ class VideoPlayerState(
         firstFrameHealthJob?.cancel()
         ratioHealthJob?.cancel()
         pendingPrepareRoute = null
+        pendingPrepareSession = null
+        clearTerminalRetry()
         instance.release()
     }
 }

@@ -5,24 +5,46 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.LocalContentColor
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
+import androidx.tv.material3.WideButton
 import top.yogiczy.mytv.tv.ui.material.CircularProgressIndicator
 import top.yogiczy.mytv.tv.ui.theme.MyTVTheme
+import top.yogiczy.mytv.tv.ui.utils.saveRequestFocus
 
 @Composable
 fun VideoPlayerError(
     modifier: Modifier = Modifier,
     errorProvider: () -> String? = { null },
     retryMessageProvider: () -> String? = { null },
+    terminalRetryAvailableProvider: () -> Boolean = { false },
+    focusRequestKeyProvider: () -> Any = { Unit },
+    onRetry: () -> Unit = {},
 ) {
     val retryMessage = retryMessageProvider()
     val error = errorProvider()
+    val terminalRetryAvailable = terminalRetryAvailableProvider()
+    val focusRequestKey = focusRequestKeyProvider()
+    val retryFocusRequester = remember { FocusRequester() }
+
+    LaunchedEffect(error, terminalRetryAvailable, focusRequestKey) {
+        if (error != null && terminalRetryAvailable) {
+            repeat(2) {
+                withFrameNanos { }
+                retryFocusRequester.saveRequestFocus()
+            }
+        }
+    }
     if (retryMessage == null && error == null) return
 
     Column(
@@ -63,6 +85,16 @@ fun VideoPlayerError(
                     text = nnDesc,
                     style = MaterialTheme.typography.bodyMedium,
                     color = LocalContentColor.current.copy(alpha = 0.8f),
+                )
+            }
+
+            if (terminalRetryAvailable) {
+                WideButton(
+                    modifier = Modifier
+                        .padding(top = 12.dp)
+                        .focusRequester(retryFocusRequester),
+                    onClick = onRetry,
+                    title = { Text("重新嘗試") },
                 )
             }
         }

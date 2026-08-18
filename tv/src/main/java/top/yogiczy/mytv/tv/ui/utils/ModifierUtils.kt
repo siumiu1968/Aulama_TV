@@ -83,16 +83,21 @@ fun Modifier.handleKeyEvents(
                 if (it.nativeKeyEvent.repeatCount > 0 && !state.longHandled) {
                     state.longHandled = true
                     currentOnKeyLongTap[keyCode]?.invoke()
+                    true
+                } else {
+                    currentOnKeyTap[keyCode] != null
                 }
-                true
             }
 
             KeyEvent.ACTION_UP -> {
                 val state = keyPressStates.remove(keyCode)
                 if (state != null && !state.longHandled) {
-                    currentOnKeyTap[keyCode]?.invoke()
+                    val onTap = currentOnKeyTap[keyCode]
+                    onTap?.invoke()
+                    onTap != null
+                } else {
+                    state?.longHandled == true
                 }
-                true
             }
 
             else -> false
