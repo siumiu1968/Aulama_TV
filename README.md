@@ -9,13 +9,20 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/siumiu1968/Aulama_TV/releases/tag/v2.6.20-family"><img src="https://img.shields.io/github/v/release/siumiu1968/Aulama_TV?display_name=tag&label=Android%20TV&color=2383e2" alt="Android TV release" /></a>
+  <a href="https://github.com/siumiu1968/Aulama_TV/releases/tag/v2.7.0-family"><img src="https://img.shields.io/github/v/release/siumiu1968/Aulama_TV?display_name=tag&label=Android%20TV&color=2383e2" alt="Android TV release" /></a>
   <a href="https://github.com/siumiu1968/Aulama_TV/releases"><img src="https://img.shields.io/github/downloads/siumiu1968/Aulama_TV/total?label=downloads" alt="Downloads" /></a>
   <a href="https://apilevels.com/"><img src="https://img.shields.io/badge/Android-5.0%2B-3ddc84?logo=android" alt="Android 5.0+" /></a>
   <a href="./LICENSE"><img src="https://img.shields.io/github/license/siumiu1968/Aulama_TV" alt="MIT License" /></a>
 </p>
 
-> 目前正式版本：Android TV `2.6.20-family`、Android 手機 `1.1.3`；Android TV 最新測試版為 `2.6.20-beta.5`。
+> 目前正式版本：Android TV `2.7.0-family`、Android 手機 `1.1.3`；Android TV 最新測試版為 `2.6.20-beta.5`。
+
+## 2.7.0 更新重點
+
+- **即時字幕正式登場**：英文直播支援英文、繁中及中英雙語字幕，配合直播延遲校正、有限重連及背景節流。
+- **播放與選線全面優化**：加入本機網絡經驗、高清優先探測、有界回訪、穩播緩衝及 4K 慢源兼容，減少錯誤降畫質及長時間黑畫。
+- **更新流程更可靠**：已下載安裝包可直接重開系統安裝頁，並自動清理殘缺、舊版及安裝完成檔案。
+- **介面細節改善**：字幕改為白字黑邊、配對頁加入 Aulama ID Logo，設定頁焦點及圓角亦已修正。
 
 ## 2.6.20 Beta 5 測試重點
 
@@ -108,7 +115,7 @@
 | 平台 | 版本 | 下載 |
 | --- | --- | --- |
 | Android TV／Google TV 測試版 | `2.6.20-beta.5` | [下載 Beta APK](https://github.com/siumiu1968/Aulama_TV/releases/download/v2.6.20-beta.5/mytv-android-tv-2.6.20-beta.5-all-sdk21.apk) |
-| Android TV／Google TV | `2.6.20-family` | [下載 APK](https://github.com/siumiu1968/Aulama_TV/releases/download/v2.6.20-family/mytv-android-tv-2.6.20-family-all-sdk21.apk) |
+| Android TV／Google TV | `2.7.0-family` | [下載 APK](https://github.com/siumiu1968/Aulama_TV/releases/download/v2.7.0-family/mytv-android-tv-2.7.0-family-all-sdk21.apk) |
 | Android 手機 | `1.1.3` | [下載 APK](https://github.com/siumiu1968/Aulama_TV/releases/tag/android-v1.1.3) |
 | 網頁版 | 最新版 | [開啟 Aulama IPTV](https://aulama.org/iptv/) |
 
