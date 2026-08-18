@@ -47,6 +47,8 @@ import top.yogiczy.mytv.core.data.entities.channel.ChannelRoute
 import top.yogiczy.mytv.core.data.network.OkHttp
 import top.yogiczy.mytv.core.data.utils.Logger
 import top.yogiczy.mytv.tv.ui.utils.Configs
+import top.yogiczy.mytv.tv.ui.utils.IptvStabilityProfile
+import top.yogiczy.mytv.tv.ui.utils.media3BufferTuning
 import top.yogiczy.mytv.tv.account.aulamaRequestHeaders
 import java.util.concurrent.TimeUnit
 
@@ -54,6 +56,7 @@ import java.util.concurrent.TimeUnit
 class Media3VideoPlayer(
     private val context: Context,
     private val coroutineScope: CoroutineScope,
+    private val stabilityProfile: IptvStabilityProfile = IptvStabilityProfile.FAST_START,
 ) : VideoPlayer(coroutineScope) {
     private val log = Logger.create(javaClass.simpleName)
 
@@ -140,8 +143,14 @@ class Media3VideoPlayer(
                 else DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON
             )
 
+        val bufferTuning = media3BufferTuning(stabilityProfile)
         val loadControl = DefaultLoadControl.Builder()
-            .setBufferDurationsMs(8_000, 35_000, 1_200, 3_000)
+            .setBufferDurationsMs(
+                bufferTuning.minBufferMs,
+                bufferTuning.maxBufferMs,
+                bufferTuning.bufferForPlaybackMs,
+                bufferTuning.bufferForPlaybackAfterRebufferMs,
+            )
             .setPrioritizeTimeOverSizeThresholds(true)
             .build()
 

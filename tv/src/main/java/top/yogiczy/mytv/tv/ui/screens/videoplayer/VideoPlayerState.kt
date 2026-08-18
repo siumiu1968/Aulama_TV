@@ -33,8 +33,12 @@ import top.yogiczy.mytv.tv.ui.screens.videoplayer.player.VideoPlayer
 import top.yogiczy.mytv.tv.ui.utils.Configs
 import top.yogiczy.mytv.tv.ui.utils.IptvDegradationReason
 import top.yogiczy.mytv.tv.ui.utils.IptvPlaybackMode
+import top.yogiczy.mytv.tv.ui.utils.IptvRouteHealth
 import top.yogiczy.mytv.tv.ui.utils.IptvPlaybackHealthPolicy
 import top.yogiczy.mytv.tv.ui.utils.IptvPlaybackHealthWindow
+import top.yogiczy.mytv.tv.ui.utils.IptvStabilityProfile
+import top.yogiczy.mytv.tv.ui.utils.profileAfterPlaybackModeFallback
+import top.yogiczy.mytv.tv.ui.utils.selectIptvStabilityProfile
 
 internal fun shouldTryPlaybackModeFallback(errorCodeName: String, errorCode: Int): Boolean {
     val normalized = errorCodeName.uppercase()
@@ -165,6 +169,7 @@ class VideoPlayerState(
     }
     private var activeIJKSoftwareDecode = false
     private var activeLeTvVendorPlayer = instance is LeTvVideoPlayer
+    private var activeStabilityProfile = IptvStabilityProfile.FAST_START
     private var initialized = false
     private var playbackGeneration = 0
     private var activePlayerSession = 0L
@@ -245,6 +250,7 @@ class VideoPlayerState(
         route: ChannelRoute,
         retrying: Boolean = false,
         preferredPlaybackMode: IptvPlaybackMode? = null,
+        learnedHealth: IptvRouteHealth? = null,
         firstFrameTimeoutMs: Long = IptvPlaybackHealthPolicy.firstFrameTimeoutMs,
     ) {
         if (!initialized) initialize()
@@ -269,6 +275,7 @@ class VideoPlayerState(
         degradedReported = false
         currentRoute = route
         val mode = selectPlaybackMode(route, preferredPlaybackMode)
+        activeStabilityProfile = selectIptvStabilityProfile(learnedHealth, mode)
         requiresSurfaceView = route.quality == ChannelQuality.UHD_4K ||
             mode == IptvPlaybackMode.MEDIA3
         if (requiresSurfaceView) currentTexture = null
@@ -430,6 +437,7 @@ class VideoPlayerState(
     private val onFirstFrameListeners = mutableListOf<() -> Unit>()
     private val onErrorListeners = mutableListOf<(String) -> Boolean>()
     private val onInterruptListeners = mutableListOf<() -> Unit>()
+    private val onPlaybackIssueObservedListeners = mutableListOf<(String) -> Unit>()
     private val onPlaybackDegradedListeners = mutableListOf<(String) -> Unit>()
 
     fun onReady(listener: () -> Unit) {
@@ -448,6 +456,10 @@ class VideoPlayerState(
         onInterruptListeners.add(listener)
     }
 
+    fun onPlaybackIssueObserved(listener: (String) -> Unit) {
+        onPlaybackIssueObservedListeners.add(listener)
+    }
+
     fun onPlaybackDegraded(listener: (String) -> Unit) {
         onPlaybackDegradedListeners.add(listener)
     }
@@ -457,6 +469,9 @@ class VideoPlayerState(
         allowPlaybackModeFallback: Boolean = false,
     ) {
         if (degradedReported) return
+        // Telemetry must be captured before an engine fallback consumes the event. It lets the
+        // next attempt of the same route + decoder choose the stable buffer profile.
+        onPlaybackIssueObservedListeners.forEach { it(reason) }
         if (
             allowPlaybackModeFallback &&
             attemptedPlaybackModes.size == 1 &&
@@ -572,6 +587,11 @@ class VideoPlayerState(
                 currentRoute?.url == route.url &&
                 playbackMode == previousMode
             ) {
+                activeStabilityProfile = profileAfterPlaybackModeFallback(
+                    activeStabilityProfile,
+                    previousMode,
+                    nextMode,
+                )
                 prepareWithMode(route, nextMode)
             }
         }
@@ -597,18 +617,22 @@ class VideoPlayerState(
             currentRoute?.url != fourKFallbackRouteUrl &&
             LeTvVideoPlayer.isAvailable(context)
 
-    private fun createPlayer(mode: IptvPlaybackMode): VideoPlayer = when (mode) {
+    private fun createPlayer(
+        mode: IptvPlaybackMode,
+        stabilityProfile: IptvStabilityProfile,
+    ): VideoPlayer = when (mode) {
         IptvPlaybackMode.IJK -> if (shouldUseLeTvVendorPlayer(mode)) {
             LeTvVideoPlayer(context, coroutineScope)
         } else {
-            IJKVideoPlayer(context, coroutineScope)
+            IJKVideoPlayer(context, coroutineScope, stabilityProfile = stabilityProfile)
         }
         IptvPlaybackMode.IJK_SOFTWARE -> IJKVideoPlayer(
             context,
             coroutineScope,
             forceSoftwareDecode = true,
+            stabilityProfile = stabilityProfile,
         )
-        IptvPlaybackMode.MEDIA3 -> Media3VideoPlayer(context, coroutineScope)
+        IptvPlaybackMode.MEDIA3 -> Media3VideoPlayer(context, coroutineScope, stabilityProfile)
     }
 
     private fun prepareWithMode(route: ChannelRoute, mode: IptvPlaybackMode) {
@@ -652,7 +676,7 @@ class VideoPlayerState(
         currentSurface = null
         currentTexture = null
         videoOutputGeneration += 1
-        instance = createPlayer(mode)
+        instance = createPlayer(mode, activeStabilityProfile)
         activePlayerType = type
         activeIJKSoftwareDecode = softwareDecode
         activeLeTvVendorPlayer = useLeTvVendorPlayer
@@ -699,6 +723,7 @@ class VideoPlayerState(
                         currentRoute?.url == route.url &&
                         activeLeTvVendorPlayer
                     ) {
+                        activeStabilityProfile = IptvStabilityProfile.FAST_START
                         prepareWithMode(route, IptvPlaybackMode.IJK)
                     }
                 }
@@ -829,6 +854,7 @@ class VideoPlayerState(
         onFirstFrameListeners.clear()
         onErrorListeners.clear()
         onInterruptListeners.clear()
+        onPlaybackIssueObservedListeners.clear()
         onPlaybackDegradedListeners.clear()
         bufferingHealthJob?.cancel()
         firstFrameHealthJob?.cancel()

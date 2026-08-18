@@ -18,6 +18,8 @@ import tv.danmaku.ijk.media.player.IMediaPlayer
 import tv.danmaku.ijk.media.player.IjkMediaPlayer
 import top.yogiczy.mytv.core.data.utils.Logger
 import top.yogiczy.mytv.tv.ui.utils.Configs
+import top.yogiczy.mytv.tv.ui.utils.IptvStabilityProfile
+import top.yogiczy.mytv.tv.ui.utils.ijkBufferTuning
 import top.yogiczy.mytv.tv.account.aulamaRequestHeaders
 
 private const val PLAYBACK_HEALTH_MIN_PROGRESS_MS = 1_500L
@@ -105,6 +107,7 @@ class IJKVideoPlayer(
     private val context: Context,
     private val coroutineScope: CoroutineScope,
     private val forceSoftwareDecode: Boolean = false,
+    private val stabilityProfile: IptvStabilityProfile = IptvStabilityProfile.FAST_START,
 ) : VideoPlayer(coroutineScope) {
     private val log = Logger.create(javaClass.simpleName)
 
@@ -176,10 +179,11 @@ class IJKVideoPlayer(
             setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "rtsp_transport", "tcp")
             setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "rtsp_flags", "prefer_tcp")
             // 直播串流要持續消耗封包，否則播放器會累積延遲，甚至出畫後再次黑屏。
-            setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "buffer_size", 256 * 1024L)
+            val bufferTuning = ijkBufferTuning(stabilityProfile)
+            setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "buffer_size", bufferTuning.bufferSizeBytes)
             setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "flush_packets", 1)
-            setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "infbuf", 1)
-            setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "packet-buffering", 0)
+            setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "infbuf", bufferTuning.infiniteBuffer.toLong())
+            setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "packet-buffering", bufferTuning.packetBuffering.toLong())
 
             //https://www.cnblogs.com/Fitz/p/18537127
             // setOption(IjkMediaPlayer.OPT_CATEGORY_CODEC, "skip_loop_filter",0) //丟棄一些“無用”的數據包，例如AVI格式中的零大小數據包
