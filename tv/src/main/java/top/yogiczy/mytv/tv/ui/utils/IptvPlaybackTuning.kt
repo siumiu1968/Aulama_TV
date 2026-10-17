@@ -28,8 +28,8 @@ internal fun media3BufferTuning(profile: IptvStabilityProfile): Media3BufferTuni
 }
 
 internal fun ijkBufferTuning(profile: IptvStabilityProfile): IjkBufferTuning = when (profile) {
-    IptvStabilityProfile.FAST_START -> IjkBufferTuning(256 * 1024L, 1, 0)
-    IptvStabilityProfile.STABLE_LIVE -> IjkBufferTuning(256 * 1024L, 0, 1)
+    IptvStabilityProfile.FAST_START -> IjkBufferTuning(512 * 1024L, 0, 1)
+    IptvStabilityProfile.STABLE_LIVE -> IjkBufferTuning(2 * 1024 * 1024L, 0, 1)
 }
 
 internal fun isBufferingIssue(reason: String): Boolean = reason == "long-rebuffer" ||

@@ -13,9 +13,9 @@ class IptvPlaybackTuningTest {
     }
 
     @Test
-    fun `stable IJK enables bounded packet buffering without enlarging protocol buffer`() {
-        assertEquals(IjkBufferTuning(256 * 1024L, 1, 0), ijkBufferTuning(IptvStabilityProfile.FAST_START))
-        assertEquals(IjkBufferTuning(256 * 1024L, 0, 1), ijkBufferTuning(IptvStabilityProfile.STABLE_LIVE))
+    fun `both IJK profiles use bounded packet buffering and stable mode absorbs jitter`() {
+        assertEquals(IjkBufferTuning(512 * 1024L, 0, 1), ijkBufferTuning(IptvStabilityProfile.FAST_START))
+        assertEquals(IjkBufferTuning(2 * 1024 * 1024L, 0, 1), ijkBufferTuning(IptvStabilityProfile.STABLE_LIVE))
     }
 
     @Test

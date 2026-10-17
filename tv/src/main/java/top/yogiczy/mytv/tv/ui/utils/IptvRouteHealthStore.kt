@@ -93,15 +93,9 @@ object IptvRouteHealthStore {
                 }
                 if (records.isNotEmpty() && records.all { isCoolingDown(it, now) }) 1 else 0
             }
-                .thenByDescending { index ->
-                    val quality = routes[index].quality
-                    if (!supports4k && quality ==
+                .thenBy { index ->
+                    !supports4k && routes[index].quality ==
                         top.yogiczy.mytv.core.data.entities.channel.ChannelQuality.UHD_4K
-                    ) {
-                        -1
-                    } else {
-                        quality.rank
-                    }
                 }
                 .thenByDescending { index ->
                     availableTransportIds.maxOf { transportId ->
@@ -118,6 +112,7 @@ object IptvRouteHealthStore {
                         )
                     } - autoSelectionPenalty(routes[index].url)
                 }
+                .thenByDescending { index -> routes[index].quality.rank }
                 .thenBy { index -> routes[index].sourceOrder }
         )
     }

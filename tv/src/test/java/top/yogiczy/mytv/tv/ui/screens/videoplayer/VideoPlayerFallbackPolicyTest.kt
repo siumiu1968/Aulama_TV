@@ -10,6 +10,13 @@ import top.yogiczy.mytv.tv.ui.utils.IptvPlaybackMode
 
 class VideoPlayerFallbackPolicyTest {
     @Test
+    fun noMediaAtFirstFrameDeadlineMovesToBackupWithoutAnotherDecoderTimeout() {
+        assertFalse(shouldTryFirstFrameDecoderFallback(ChannelQuality.FULL_HD, 0, 0))
+        assertTrue(shouldTryFirstFrameDecoderFallback(ChannelQuality.FULL_HD, 1920, 1080))
+        assertTrue(shouldTryFirstFrameDecoderFallback(ChannelQuality.UHD_4K, 0, 0))
+    }
+
+    @Test
     fun `engine timeout remains a delayed safety net after health deadline`() {
         assertEquals(20_000L, engineFirstFrameTimeoutMs(15_000L))
     }

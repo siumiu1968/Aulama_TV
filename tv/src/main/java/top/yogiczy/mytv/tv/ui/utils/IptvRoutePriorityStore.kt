@@ -27,7 +27,7 @@ object IptvRoutePriorityStore {
             ?.toMutableList()
             ?: mutableListOf()
 
-        if (url !in all[channelName].orEmpty()) current += url
+        if (url !in all[channelName].orEmpty()) current.add(0, url)
 
         if (current.isEmpty()) {
             all.remove(channelName)

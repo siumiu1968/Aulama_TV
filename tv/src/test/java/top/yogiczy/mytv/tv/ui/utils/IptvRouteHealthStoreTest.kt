@@ -11,6 +11,22 @@ class IptvRouteHealthStoreTest {
     private val now = 10_000_000L
 
     @Test
+    fun `recent real buffering outweighs advertised resolution`() {
+        val routes = listOf(
+            route("stuttering-1080", ChannelQuality.FULL_HD, 0),
+            route("stable-720", ChannelQuality.HD, 1),
+        )
+        val health = mapOf(
+            "stuttering-1080" to successfulHealth(20, 500).copy(
+                bufferRatioEwma = 0.45,
+                lastUpdatedAt = now,
+            ),
+            "stable-720" to successfulHealth(20, 800),
+        )
+        assertEquals(listOf(1, 0), IptvRouteHealthStore.rankedIndices(routes, health, now))
+    }
+
+    @Test
     fun `exhausted first frame timeout forgets only the learned player mode`() {
         assertNull(preferredPlaybackModeAfterDegradation("IJK", "first-frame-timeout"))
         assertEquals(
@@ -75,7 +91,7 @@ class IptvRouteHealthStoreTest {
     }
 
     @Test
-    fun `usable 1080 route stays ahead of a faster 720 route`() {
+    fun `substantially more stable 720 route outranks slow 1080 route`() {
         val routes = listOf(
             route("fast-720", ChannelQuality.HD, 0),
             route("slower-1080", ChannelQuality.FULL_HD, 1),
@@ -85,7 +101,7 @@ class IptvRouteHealthStoreTest {
             "slower-1080" to successfulHealth(successCount = 2, startupMs = 3_000),
         )
 
-        assertEquals(listOf(1, 0), IptvRouteHealthStore.rankedIndices(routes, health, now))
+        assertEquals(listOf(0, 1), IptvRouteHealthStore.rankedIndices(routes, health, now))
     }
 
     @Test

@@ -5,6 +5,26 @@ import org.junit.Test
 
 class AulamaSyncMergePolicyTest {
     @Test
+    fun `automatic transport keeps direct first and includes every website relay`() {
+        val candidates = listOf("jp_relay", "direct", "sg_relay", "hk_relay").map { id ->
+            AulamaPlaybackCandidate(
+                id = id,
+                transport = if (id == "direct") AulamaPlaybackTransport.DIRECT else AulamaPlaybackTransport.RELAY,
+                url = "https://example.test/$id",
+                label = id,
+            )
+        }
+        assertEquals(
+            listOf("direct", "hk_relay", "jp_relay", "sg_relay"),
+            AulamaPlaybackPolicy.prioritize(candidates, "auto").map { it.id },
+        )
+        assertEquals(
+            listOf("direct"),
+            AulamaPlaybackPolicy.allowedTransportIds("auto", isSuperAdmin = false),
+        )
+    }
+
+    @Test
     fun `independent additions and deletions merge without resurrecting base values`() {
         val base = AulamaSyncPayload(favorites = listOf("Jade", "News"))
         val local = AulamaSyncPayload(favorites = listOf("Jade", "ViuTV"))
@@ -95,7 +115,7 @@ class AulamaSyncMergePolicyTest {
     }
 
     @Test
-    fun `direct is default while manually selected relay only falls back to direct`() {
+    fun `direct is default while admin relay choices include website fallback regions`() {
         val candidates = listOf(
             AulamaPlaybackCandidate(
                 id = "hk_relay",
@@ -118,7 +138,7 @@ class AulamaSyncMergePolicyTest {
         )
 
         assertEquals(
-            listOf("jp_relay", "direct"),
+            listOf("jp_relay", "hk_relay", "direct"),
             AulamaPlaybackPolicy.prioritize(candidates, "jp_relay").map { it.id },
         )
         assertEquals(
@@ -126,7 +146,7 @@ class AulamaSyncMergePolicyTest {
             AulamaPlaybackPolicy.prioritize(candidates, "direct").map { it.id },
         )
         assertEquals(
-            listOf("hk_relay", "direct"),
+            listOf("hk_relay", "jp_relay", "direct"),
             AulamaPlaybackPolicy.prioritize(candidates, "hk_relay").map { it.id },
         )
         assertEquals(
@@ -137,7 +157,7 @@ class AulamaSyncMergePolicyTest {
             ),
         )
         assertEquals(
-            listOf("jp_relay", "direct"),
+            listOf("jp_relay", "hk_relay", "sg_relay", "direct"),
             AulamaPlaybackPolicy.allowedTransportIds(
                 preferenceId = "jp_relay",
                 isSuperAdmin = true,

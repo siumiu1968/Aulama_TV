@@ -1,6 +1,9 @@
 package top.yogiczy.mytv.tv.ui.utils
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import okhttp3.Call
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -41,10 +44,16 @@ internal data class HlsProbeTarget(
  * 亦唔把結果寫入長期健康分；真正成功仍以播放器首幀為準。
  */
 internal object IptvRouteProbe {
-    private const val MAX_CONCURRENT_PROBES = 3
+    private const val MAX_CONCURRENT_PROBES = 2
     private const val ROUTE_PROBE_TIMEOUT_MS = 3_000L
     private const val PLAYLIST_READ_LIMIT = 64 * 1024
     private const val MEDIA_READ_LIMIT = 32 * 1024
+    private val activeCalls = mutableMapOf<String, MutableSet<Call>>()
+
+    fun cancelForUrl(url: String) {
+        val calls = synchronized(activeCalls) { activeCalls[url]?.toList().orEmpty() }
+        calls.forEach(Call::cancel)
+    }
 
     private val baseClient by lazy {
         OkHttp.client.newBuilder()
@@ -55,11 +64,20 @@ internal object IptvRouteProbe {
             .build()
     }
 
-    suspend fun probeAll(routes: List<ChannelRoute>): List<IptvRouteProbeResult> = coroutineScope {
+    suspend fun probeAll(
+        routes: List<ChannelRoute>,
+        excludedUrls: Set<String> = emptySet(),
+    ): List<IptvRouteProbeResult> = coroutineScope {
         val semaphore = Semaphore(MAX_CONCURRENT_PROBES)
-        routes.mapIndexed { index, route ->
+        routes.withIndex()
+            .filter { it.value.url !in excludedUrls }
+            .distinctBy { it.value.url to it.value.requestHeaders }
+            .map { (index, route) ->
             async(Dispatchers.IO) {
-                semaphore.withPermit { probe(index, route) }
+                semaphore.withPermit {
+                    currentCoroutineContext().ensureActive()
+                    probe(index, route)
+                }
             }
         }.awaitAll()
     }
@@ -150,29 +168,42 @@ internal object IptvRouteProbe {
                 .build()
         }.getOrElse { return FetchResult.DefinitiveFailure }
 
-        val result = runCatching {
-            client.newCall(request).await().use { response ->
-                if (ranged && response.code in setOf(400, 405, 416)) {
-                    return@use FetchResult.RangeUnsupported
+        val call = client.newCall(request)
+        synchronized(activeCalls) { activeCalls.getOrPut(route.url) { mutableSetOf() }.add(call) }
+        val result = try {
+            runCatching {
+                call.await().use { response ->
+                    if (ranged && response.code in setOf(400, 405, 416)) {
+                        return@use FetchResult.RangeUnsupported
+                    }
+                    if (!response.isSuccessful) return@use if (
+                        response.code == 408 || response.code == 429 || response.code >= 500
+                    ) FetchResult.Inconclusive else FetchResult.DefinitiveFailure
+                    val body = response.body ?: return@use FetchResult.DefinitiveFailure
+                    FetchResult.Success(
+                        finalUrl = response.request.url.toString(),
+                        contentType = body.contentType()?.toString().orEmpty(),
+                        bytes = body.byteStream().use { input ->
+                            val output = ByteArrayOutputStream(minOf(limit, 8 * 1024))
+                            val buffer = ByteArray(8 * 1024)
+                            while (output.size() < limit) {
+                                val read = input.read(buffer, 0, minOf(buffer.size, limit - output.size()))
+                                if (read <= 0) break
+                                output.write(buffer, 0, read)
+                            }
+                            output.toByteArray()
+                        },
+                    )
                 }
-                if (!response.isSuccessful) return@use FetchResult.DefinitiveFailure
-                val body = response.body ?: return@use FetchResult.DefinitiveFailure
-                FetchResult.Success(
-                    finalUrl = response.request.url.toString(),
-                    contentType = body.contentType()?.toString().orEmpty(),
-                    bytes = body.byteStream().use { input ->
-                        val output = ByteArrayOutputStream(minOf(limit, 8 * 1024))
-                        val buffer = ByteArray(8 * 1024)
-                        while (output.size() < limit) {
-                            val read = input.read(buffer, 0, minOf(buffer.size, limit - output.size()))
-                            if (read <= 0) break
-                            output.write(buffer, 0, read)
-                        }
-                        output.toByteArray()
-                    },
-                )
+            }.getOrElse { FetchResult.Inconclusive }
+        } finally {
+            synchronized(activeCalls) {
+                activeCalls[route.url]?.let { calls ->
+                    calls.remove(call)
+                    if (calls.isEmpty()) activeCalls.remove(route.url)
+                }
             }
-        }.getOrElse { FetchResult.Inconclusive }
+        }
         return if (ranged && result == FetchResult.RangeUnsupported) {
             fetch(client, url, route, limit, ranged = false)
         } else {
@@ -293,7 +324,8 @@ internal fun selectSoftRevisitRoute(
         .filter { resultByIndex[it]?.status == IptvRouteProbeStatus.AVAILABLE }
         .filter { index ->
             val candidateQualityRank = effectiveQualityRank(routes[index], supports4k)
-            candidateQualityRank > currentQualityRank ||
+            val candidateScore = learnedScores[index] ?: 50.0
+            (candidateQualityRank > currentQualityRank && candidateScore >= currentScore - 10.0) ||
                 (
                     candidateQualityRank == currentQualityRank &&
                         IptvRouteHealthStore.shouldAutoSwitch(
@@ -318,13 +350,17 @@ internal fun reorderUnattemptedRoutesByProbe(
     results: List<IptvRouteProbeResult>,
     learnedScores: Map<Int, Double> = emptyMap(),
     supports4k: Boolean = true,
+    priorityUrls: List<String> = emptyList(),
 ): List<Int> {
     if (attemptOrder.isEmpty() || currentCursor !in attemptOrder.indices) return attemptOrder
+    val priorityRank = priorityUrls.withIndex().associate { it.value to it.index }
     val resultByIndex = results.associateBy(IptvRouteProbeResult::routeIndex)
     val sourceRank = attemptOrder.withIndex().associate { (rank, index) -> index to rank }
     val prefix = attemptOrder.take(currentCursor + 1)
     val tail = attemptOrder.drop(currentCursor + 1).sortedWith(
-        liveProbeComparator(routes, resultByIndex, learnedScores, sourceRank, supports4k),
+        compareBy<Int> { priorityRank[routes[it].url] ?: Int.MAX_VALUE }.then(
+            liveProbeComparator(routes, resultByIndex, learnedScores, sourceRank, supports4k),
+        ),
     )
     return prefix + tail
 }
@@ -335,11 +371,15 @@ internal fun orderRoutesByProbe(
     results: List<IptvRouteProbeResult>,
     learnedScores: Map<Int, Double> = emptyMap(),
     supports4k: Boolean = true,
+    priorityUrls: List<String> = emptyList(),
 ): List<Int> {
+    val priorityRank = priorityUrls.withIndex().associate { it.value to it.index }
     val resultByIndex = results.associateBy(IptvRouteProbeResult::routeIndex)
     val sourceRank = attemptOrder.withIndex().associate { (rank, index) -> index to rank }
     return attemptOrder.sortedWith(
-        liveProbeComparator(routes, resultByIndex, learnedScores, sourceRank, supports4k),
+        compareBy<Int> { priorityRank[routes[it].url] ?: Int.MAX_VALUE }.then(
+            liveProbeComparator(routes, resultByIndex, learnedScores, sourceRank, supports4k),
+        ),
     )
 }
 
@@ -355,9 +395,12 @@ private fun liveProbeComparator(
         IptvRouteProbeStatus.INCONCLUSIVE, null -> 1
         IptvRouteProbeStatus.UNAVAILABLE -> 2
     }
-}.thenByDescending { index ->
-    routes.getOrNull(index)?.let { effectiveQualityRank(it, supports4k) } ?: 0
+}.thenBy { index ->
+    routes.getOrNull(index)?.let { effectiveQualityRank(it, supports4k) < 0 } ?: true
 }.thenByDescending { index -> learnedScores[index] ?: 50.0 }
+    .thenByDescending { index ->
+        routes.getOrNull(index)?.let { effectiveQualityRank(it, supports4k) } ?: 0
+    }
     .thenBy { index -> resultByIndex[index]?.elapsedMs ?: Long.MAX_VALUE }
     .thenBy { index -> sourceRank[index] ?: Int.MAX_VALUE }
 

@@ -24,6 +24,7 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.tv.material3.Button
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import kotlinx.collections.immutable.toPersistentList
@@ -50,6 +51,8 @@ fun ChannelUrlScreen(
         AulamaPlaybackPolicy.DEFAULT_PREFERENCE_ID
     },
     onTransportPreferenceSelected: (String) -> Unit = {},
+    actualTransportLabelProvider: () -> String = { "直接連線" },
+    onAutoSelected: () -> Unit = {},
     onUrlSelected: (String) -> Unit = {},
     onClose: () -> Unit = {},
 ) {
@@ -126,6 +129,7 @@ fun ChannelUrlScreen(
                 PlaybackTransportItemList(
                     modifier = Modifier.fillMaxWidth(),
                     selectedIdProvider = transportPreferenceIdProvider,
+                    actualTransportLabelProvider = actualTransportLabelProvider,
                     sourceEntryFocusRequester = sourceEntryFocusRequester,
                     onSelected = onTransportPreferenceSelected,
                     onUserAction = { screenAutoCloseState.active() },
@@ -152,6 +156,12 @@ fun ChannelUrlScreen(
                     style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.secondary,
                 )
+                Button(onClick = {
+                    screenAutoCloseState.active()
+                    onAutoSelected()
+                }) {
+                    Text("自動選線")
+                }
                 if (priorityUrls.isNotEmpty()) {
                     Text(
                         text = "已優先 ${priorityUrls.size} 條",

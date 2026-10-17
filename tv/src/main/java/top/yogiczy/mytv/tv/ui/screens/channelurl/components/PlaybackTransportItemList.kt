@@ -43,14 +43,17 @@ private val playbackTransportOptions = listOf(
         "直連",
         "預設直接連接，唔會自動使用中轉",
     ),
-    PlaybackTransportOption("hk_relay", "香港", "手動使用香港中轉，失敗回直連"),
-    PlaybackTransportOption("jp_relay", "日本", "手動使用日本中轉，失敗回直連"),
+    PlaybackTransportOption("auto", "自動", "先試直連，必要時嘗試香港、日本及新加坡"),
+    PlaybackTransportOption("hk_relay", "香港", "優先香港，其他地區及直連作後備"),
+    PlaybackTransportOption("jp_relay", "日本", "優先日本，其他地區及直連作後備"),
+    PlaybackTransportOption("sg_relay", "新加坡", "優先新加坡，其他地區及直連作後備"),
 )
 
 @Composable
 fun PlaybackTransportItemList(
     modifier: Modifier = Modifier,
     selectedIdProvider: () -> String = { AulamaPlaybackPolicy.DEFAULT_PREFERENCE_ID },
+    actualTransportLabelProvider: () -> String = { "直接連線" },
     sourceEntryFocusRequester: FocusRequester? = null,
     onSelected: (String) -> Unit = {},
     onUserAction: () -> Unit = {},
@@ -162,12 +165,12 @@ fun PlaybackTransportItemList(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = "目前",
+                text = "實際連線",
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.tertiary,
             )
             Text(
-                text = selectedOption.detail,
+                text = actualTransportLabelProvider() + " · " + selectedOption.detail,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,

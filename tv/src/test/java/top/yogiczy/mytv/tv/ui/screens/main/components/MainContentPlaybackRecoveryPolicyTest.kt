@@ -7,6 +7,13 @@ import org.junit.Test
 
 class MainContentPlaybackRecoveryPolicyTest {
     @Test
+    fun exhaustedAlternateDecoderDoesNotRepeatCompleteReloadCycle() {
+        assertFalse(shouldReloadCurrentCandidate("long-rebuffer", alternateModeTried = true))
+        assertFalse(shouldReloadCurrentCandidate("ijk-playback-stalled", alternateModeTried = true))
+        assertTrue(shouldReloadCurrentCandidate("long-rebuffer", alternateModeTried = false))
+    }
+
+    @Test
     fun `hard playback stalls force recovery`() {
         assertTrue(requiresImmediatePlaybackRecovery("first-frame-timeout"))
         assertTrue(requiresImmediatePlaybackRecovery("long-rebuffer"))

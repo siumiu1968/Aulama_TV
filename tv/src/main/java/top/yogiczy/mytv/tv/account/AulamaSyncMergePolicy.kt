@@ -133,26 +133,29 @@ internal object AulamaPlaybackPolicy {
         }
         if (preferenceId == DEFAULT_PREFERENCE_ID) return listOfNotNull(direct)
 
-        val preferred = candidates.firstOrNull { it.id == preferenceId }
-        return listOfNotNull(preferred, direct).distinctBy { it.url }
+        val order = transportOrder(preferenceId)
+        return order.flatMap { id -> candidates.filter { it.id == id } }
+            .distinctBy { it.url }
     }
 
     fun preferenceLabel(preferenceId: String): String = when (preferenceId) {
-        "hk_relay" -> "已手動選用香港中轉；失敗會回到直連"
-        "jp_relay" -> "已手動選用日本中轉；失敗會回到直連"
+        "auto" -> "自動選線：先直連，必要時使用中轉"
+        "hk_relay" -> "優先香港中轉；失敗會嘗試其他地區及直連"
+        "jp_relay" -> "優先日本中轉；失敗會嘗試其他地區及直連"
+        "sg_relay" -> "優先新加坡中轉；失敗會嘗試其他地區及直連"
         else -> "已改用直接連線"
     }
 
     fun allowedTransportIds(preferenceId: String, isSuperAdmin: Boolean): List<String> =
-        if (!isSuperAdmin) {
-            listOf(DEFAULT_PREFERENCE_ID)
-        } else {
-            when (preferenceId) {
-                "hk_relay" -> listOf("hk_relay", DEFAULT_PREFERENCE_ID)
-                "jp_relay" -> listOf("jp_relay", DEFAULT_PREFERENCE_ID)
-                else -> listOf(DEFAULT_PREFERENCE_ID)
-            }
-        }
+        if (isSuperAdmin) transportOrder(preferenceId) else listOf(DEFAULT_PREFERENCE_ID)
+
+    private fun transportOrder(preferenceId: String): List<String> = when (preferenceId) {
+        "auto" -> listOf("direct", "hk_relay", "jp_relay", "sg_relay")
+        "hk_relay" -> listOf("hk_relay", "jp_relay", "sg_relay", "direct")
+        "jp_relay" -> listOf("jp_relay", "hk_relay", "sg_relay", "direct")
+        "sg_relay" -> listOf("sg_relay", "hk_relay", "jp_relay", "direct")
+        else -> listOf(DEFAULT_PREFERENCE_ID)
+    }
 
     private fun relayLabel(candidate: AulamaPlanCandidate): String = when {
         candidate.id.equals("hk_relay", ignoreCase = true) ||
@@ -160,6 +163,9 @@ internal object AulamaPlaybackPolicy {
 
         candidate.id.equals("jp_relay", ignoreCase = true) ||
             candidate.region.equals("jp", ignoreCase = true) -> "日本中轉"
+
+        candidate.id.equals("sg_relay", ignoreCase = true) ||
+            candidate.region.equals("sg", ignoreCase = true) -> "新加坡中轉"
 
         else -> "${candidate.region}中轉"
     }

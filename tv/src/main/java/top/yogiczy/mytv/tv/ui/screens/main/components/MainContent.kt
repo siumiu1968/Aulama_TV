@@ -443,12 +443,20 @@ fun MainContent(
             channelProvider = { mainContentState.currentChannel },
             currentUrlProvider = { mainContentState.currentChannel.urlList[mainContentState.currentChannelUrlIdx] },
             isSuperAdminProvider = { AulamaAccount.manager.isSuperAdmin() },
+            actualTransportLabelProvider = { mainContentState.actualPlaybackTransportLabel },
             transportPreferenceIdProvider = {
                 mainContentState.playbackTransportPreferenceId
             },
             onTransportPreferenceSelected = {
                 mainContentState.isChannelUrlScreenVisible = false
                 mainContentState.changePlaybackTransportPreference(it)
+            },
+            onAutoSelected = {
+                mainContentState.isChannelUrlScreenVisible = false
+                mainContentState.changeCurrentChannel(
+                    mainContentState.currentChannel,
+                    playbackEpgProgramme = mainContentState.currentPlaybackEpgProgramme,
+                )
             },
             onUrlSelected = {
                 mainContentState.isChannelUrlScreenVisible = false

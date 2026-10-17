@@ -15,11 +15,7 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableLongStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -37,16 +33,10 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.RadioButton
 import androidx.tv.material3.Text
 import androidx.tv.material3.Border
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import okhttp3.Request
-import top.yogiczy.mytv.core.data.network.OkHttp
 import top.yogiczy.mytv.core.data.utils.ChannelUtil
 import top.yogiczy.mytv.core.util.utils.isIPv6
 import top.yogiczy.mytv.tv.ui.theme.MyTVTheme
 import top.yogiczy.mytv.tv.ui.utils.saveRequestFocus
-import java.io.IOException
-import kotlin.system.measureTimeMillis
 
 @Composable
 fun ChannelUrlItem(
@@ -68,7 +58,6 @@ fun ChannelUrlItem(
     val rowFocusRequester = externalRowFocusRequester ?: fallbackRowFocusRequester
     val priorityFocusRequester = remember(url) { FocusRequester() }
 
-    val urlDelay = rememberUrlDelay(url)
     val itemShape = RoundedCornerShape(6.dp)
 
     LaunchedEffect(isSelected, focusSelectedOnLaunch) {
@@ -123,7 +112,6 @@ fun ChannelUrlItem(
                     val routeInfo = buildList {
                         if (ChannelUtil.urlSupportPlayback(url)) add("回放")
                         add(if (url.isIPv6()) "IPV6" else "IPV4")
-                        if (urlDelay != 0L) add("$urlDelay ms")
                     }.joinToString(" · ")
                     Text(
                         text = routeInfo,
@@ -197,34 +185,6 @@ fun ChannelUrlItem(
             }
         },
     )
-}
-
-@Composable
-private fun rememberUrlDelay(url: String): Long {
-    var elapsedTime by remember { mutableLongStateOf(0) }
-    var hasError by remember { mutableStateOf(false) }
-
-    LaunchedEffect(Unit) {
-        try {
-            withContext(Dispatchers.IO) {
-                val client = OkHttp.client
-                val request = Request.Builder().url(url).build()
-
-                elapsedTime = measureTimeMillis {
-                    try {
-                        client.newCall(request).execute().use { response ->
-                            if (!response.isSuccessful) throw IOException("Unexpected code $response")
-                        }
-                    } catch (_: IOException) {
-                        hasError = true
-                    }
-                }
-            }
-        } catch (_: Exception) {
-        }
-    }
-
-    return if (hasError) 0 else elapsedTime
 }
 
 @Preview

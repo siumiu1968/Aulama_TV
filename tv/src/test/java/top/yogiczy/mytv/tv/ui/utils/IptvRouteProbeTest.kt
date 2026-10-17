@@ -1,6 +1,11 @@
 package top.yogiczy.mytv.tv.ui.utils
 
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.async
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withTimeout
+import java.util.concurrent.TimeUnit
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import okhttp3.mockwebserver.Dispatcher
@@ -11,6 +16,75 @@ import top.yogiczy.mytv.core.data.entities.channel.ChannelQuality
 import top.yogiczy.mytv.core.data.entities.channel.ChannelRoute
 
 class IptvRouteProbeTest {
+    @Test
+    fun savedPriorityOrderSurvivesFasterBackgroundProbe() {
+        val routes = listOf(ChannelRoute("playing"), ChannelRoute("preferred"), ChannelRoute("fast"))
+        val reordered = reorderUnattemptedRoutesByProbe(
+            routes, listOf(0, 1, 2), 0,
+            listOf(
+                IptvRouteProbeResult(1, IptvRouteProbeStatus.INCONCLUSIVE, 3000),
+                IptvRouteProbeResult(2, IptvRouteProbeStatus.AVAILABLE, 10),
+            ),
+            priorityUrls = listOf("preferred"),
+        )
+        assertEquals(listOf(0, 1, 2), reordered)
+    }
+
+    @Test
+    fun startingPlaybackCancelsAnAlreadyRunningProbeForThatUrl() = runBlocking {
+        val server = MockWebServer()
+        server.enqueue(MockResponse().setBody("delayed-media").setBodyDelay(2, TimeUnit.SECONDS))
+        server.start()
+        try {
+            val url = server.url("/about-to-play").toString()
+            val pending = async(Dispatchers.Default) { IptvRouteProbe.probeAll(listOf(ChannelRoute(url))) }
+            assertNotNull(server.takeRequest(2, TimeUnit.SECONDS))
+            IptvRouteProbe.cancelForUrl(url)
+            val result = withTimeout(700) { pending.await() }
+            assertEquals(IptvRouteProbeStatus.INCONCLUSIVE, result.single().status)
+        } finally {
+            server.shutdown()
+        }
+    }
+
+    @Test
+    fun backgroundProbeNeverRequestsActiveStreamAndRetainsIndices() = runBlocking {
+        val server = MockWebServer()
+        server.enqueue(MockResponse().setBody("backup-media"))
+        server.start()
+        try {
+            val active = server.url("/currently-playing").toString()
+            val backup = server.url("/backup").toString()
+            val results = IptvRouteProbe.probeAll(
+                listOf(ChannelRoute(active), ChannelRoute(backup)),
+                excludedUrls = setOf(active),
+            )
+            assertEquals(listOf(1), results.map { it.routeIndex })
+            assertEquals("/backup", server.takeRequest().path)
+            assertEquals(1, server.requestCount)
+        } finally {
+            server.shutdown()
+        }
+    }
+
+    @Test
+    fun rateLimitingAndOverloadNeverPermanentlyEliminateRoute() = runBlocking {
+        val server = MockWebServer()
+        server.enqueue(MockResponse().setResponseCode(429))
+        server.enqueue(MockResponse().setResponseCode(503))
+        server.start()
+        try {
+            for (path in listOf("/limited", "/overloaded")) {
+                assertEquals(
+                    IptvRouteProbeStatus.INCONCLUSIVE,
+                    IptvRouteProbe.probeAll(listOf(ChannelRoute(server.url(path).toString()))).single().status,
+                )
+            }
+        } finally {
+            server.shutdown()
+        }
+    }
+
     @Test
     fun `probe keeps hls session cookie and route headers through child playlist`() = runBlocking {
         val server = MockWebServer()
@@ -104,7 +178,7 @@ class IptvRouteProbeTest {
     }
 
     @Test
-    fun `soft revisit returns from 720p to an available 1080p route`() {
+    fun `soft revisit only upgrades to available 1080p with comparable stability`() {
         val routes = listOf(
             route("recovered-1080", ChannelQuality.FULL_HD),
             route("current-720", ChannelQuality.HD),
@@ -121,7 +195,7 @@ class IptvRouteProbeTest {
                     result(1, IptvRouteProbeStatus.AVAILABLE, 100),
                     result(2, IptvRouteProbeStatus.UNAVAILABLE, 50),
                 ),
-                learnedScores = mapOf(0 to 35.0, 1 to 80.0, 2 to 90.0),
+                learnedScores = mapOf(0 to 75.0, 1 to 80.0, 2 to 90.0),
             ),
         )
     }

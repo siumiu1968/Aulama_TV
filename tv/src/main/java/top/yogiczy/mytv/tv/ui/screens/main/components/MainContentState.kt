@@ -43,6 +43,7 @@ import top.yogiczy.mytv.tv.ui.utils.IptvPlaybackHealthPolicy
 import top.yogiczy.mytv.tv.ui.utils.IptvPlaybackMode
 import top.yogiczy.mytv.tv.ui.utils.IptvNetworkScope
 import top.yogiczy.mytv.tv.ui.utils.IptvRouteProbe
+import top.yogiczy.mytv.tv.ui.utils.IptvRouteSessionPolicy
 import top.yogiczy.mytv.tv.ui.utils.IptvRouteProbeResult
 import top.yogiczy.mytv.tv.ui.utils.IptvRouteProbeStatus
 import top.yogiczy.mytv.tv.ui.utils.IptvRouteHealthStore
@@ -91,8 +92,11 @@ internal fun requiresImmediatePlaybackRecovery(reason: String): Boolean = when (
     else -> false
 }
 
-internal fun shouldReloadCurrentCandidate(reason: String): Boolean =
-    requiresImmediatePlaybackRecovery(reason) &&
+internal fun shouldReloadCurrentCandidate(
+    reason: String,
+    alternateModeTried: Boolean = false,
+): Boolean =
+    !alternateModeTried && requiresImmediatePlaybackRecovery(reason) &&
         reason != IptvPlaybackHealthPolicy.reasonCode(IptvDegradationReason.FirstFrameTimeout)
 
 internal fun canStartRouteRevisit(currentPass: Int, routeCount: Int): Boolean =
@@ -154,15 +158,19 @@ class MainContentState(
     private val routeLastAttemptAt = mutableMapOf<Int, Long>()
     private var routeProbeResults = emptyList<IptvRouteProbeResult>()
     private var routeProbeJob: Job? = null
+    private var routeProbeCompletedAt = 0L
+    private val routeSelection = IptvRouteSessionPolicy()
+    private var transportResolutionJob: Job? = null
     private var routeRevisitJob: Job? = null
     private var softRouteRescanJob: Job? = null
-    private var transportAttempts = emptyList<AulamaPlaybackCandidate>()
-    private var transportAttemptCursor = 0
+    private var transportAttempts by mutableStateOf(emptyList<AulamaPlaybackCandidate>())
+    private var transportAttemptCursor by mutableIntStateOf(0)
     private var transportResolutionGeneration = 0L
     private var _playbackTransportPreferenceId by mutableStateOf(
         AulamaPlaybackPolicy.DEFAULT_PREFERENCE_ID
     )
     val playbackTransportPreferenceId get() = _playbackTransportPreferenceId
+    val actualPlaybackTransportLabel get() = currentPlaybackCandidate()?.label ?: "正在連線"
     private var routeStartedAt = 0L
     /** 每個 attempt 固定網絡 scope；真實換網故障會重新排序而不懲罰舊網絡。 */
     private var activeNetworkScope = IptvNetworkScope.UNKNOWN
@@ -259,7 +267,7 @@ class MainContentState(
                             finishCurrentWatchSession()
                             resetPlaybackRecoveryBudget()
                             prepareCurrentRoute()
-                            startRoutePreflight(allowEarlyUnavailableSwitch = true)
+                            startRoutePreflight()
                         }
                     }
                 }
@@ -328,6 +336,11 @@ class MainContentState(
             val failedLegacyHealthKey = currentPlaybackLegacyHealthKey()
             if (lastFailureHandledKey == failedHealthKey) return@onPlaybackDegraded
             val mustRecover = requiresImmediatePlaybackRecovery(reason)
+            if (!mustRecover && !routeSelection.allowsSoftSwitch(_currentChannelUrlIdx)) {
+                videoPlayerState.keepCurrentRoute()
+                startStableWatchLearning(failedHealthKey, failedLegacyHealthKey)
+                return@onPlaybackDegraded
+            }
             if (!mustRecover && !softDegradationNoticeBudget.tryNotify(failedHealthKey)) {
                 videoPlayerState.keepCurrentRoute()
                 startStableWatchLearning(failedHealthKey, failedLegacyHealthKey)
@@ -335,8 +348,10 @@ class MainContentState(
             }
             lastFailureHandledKey = failedHealthKey
             finishCurrentWatchSession()
-            if (mustRecover) startRoutePreflight(allowEarlyUnavailableSwitch = false)
-            val shouldReload = shouldReloadCurrentCandidate(reason)
+            if (mustRecover) startRoutePreflight()
+            val shouldReload = shouldReloadCurrentCandidate(
+                reason, videoPlayerState.hasTriedAlternatePlaybackMode,
+            )
             if (shouldReload && scheduleSameCandidateReload(failedHealthKey)) {
                 Snackbar.show("播放停頓，原線重試中")
                 return@onPlaybackDegraded
@@ -388,7 +403,7 @@ class MainContentState(
             if (lastFailureHandledKey == failedHealthKey) return@onError true
             lastFailureHandledKey = failedHealthKey
             finishCurrentWatchSession()
-            startRoutePreflight(allowEarlyUnavailableSwitch = false)
+            startRoutePreflight()
 
             if (shouldRecordHealth) {
                 IptvRouteHealthStore.markFailure(
@@ -427,7 +442,7 @@ class MainContentState(
                 if (lastFailureHandledKey == failedHealthKey) return@onInterrupt
                 lastFailureHandledKey = failedHealthKey
                 finishCurrentWatchSession()
-                startRoutePreflight(allowEarlyUnavailableSwitch = false)
+                startRoutePreflight()
                 if (scheduleSameCandidateReload(failedHealthKey)) return@onInterrupt
 
                 if (shouldRecordHealth) {
@@ -568,14 +583,15 @@ class MainContentState(
         // its queued native callbacks cannot race a new transport attempt during that window.
         videoPlayerState.stop()
         resetPlaybackRecoveryBudget(resetNetworkHandoverGuard = false)
-        routeAttemptOrder = buildRouteAttemptOrder(_currentChannel, requestedIndex = null)
+        routeSelection.beginSession(routeSelection.manualRouteIndex)
+        routeAttemptOrder = buildRouteAttemptOrder(_currentChannel, routeSelection.manualRouteIndex)
         routeAttemptCursor = 0
         _currentChannelUrlIdx = routeAttemptOrder.firstOrNull()
             ?: return NetworkHandoverAction.SUPPRESS_HEALTH
         Snackbar.show("網絡已切換，正在重新選擇線路")
         log.i("網絡由 $previousScope 切換至 $latestScope，重新排序播放候選")
         prepareCurrentRoute(retrying = true)
-        startRoutePreflight(allowEarlyUnavailableSwitch = true)
+        startRoutePreflight()
         return NetworkHandoverAction.RESTARTED
     }
 
@@ -583,7 +599,9 @@ class MainContentState(
         // A 4K attempt already gets one complete Media3 -> IJK pass inside
         // VideoPlayerState. Repeating the same candidate would delay the other 4K
         // backups and contradict the manual fallback order.
-        if (currentRouteOrNull()?.quality == ChannelQuality.UHD_4K) return false
+        if (currentRouteOrNull()?.quality == ChannelQuality.UHD_4K ||
+            videoPlayerState.hasTriedAlternatePlaybackMode
+        ) return false
 
         if (!recoveryBudget.tryUseCandidateReload(healthKey)) return false
 
@@ -672,6 +690,10 @@ class MainContentState(
 
     private fun resetPlaybackRecoveryBudget(resetNetworkHandoverGuard: Boolean = true) {
         recoveryGeneration += 1
+        transportResolutionGeneration += 1
+        transportResolutionJob?.cancel()
+        transportResolutionJob = null
+        routeProbeCompletedAt = 0L
         recoveryBudget.reset()
         softDegradationNoticeBudget.reset()
         lastFailureHandledKey = null
@@ -688,32 +710,42 @@ class MainContentState(
     }
 
     /**
-     * 開台後一邊照常啟動首選線，一邊以最多三個並發輕量檢查其餘 URL。
-     * Probe 只重排本次 session 尚未試嘅尾段；真正健康分仍只由播放器首幀/觀看結果更新。
+     * 只測尚未播放嘅候選；同一 session 短時間重用結果，避免背景測線搶走直播連線。
+     * Probe 唔可推翻手動選擇，亦唔會把 HTTP 成功當成實際穩播。
      */
-    private fun startRoutePreflight(allowEarlyUnavailableSwitch: Boolean) {
-        softRouteRescanJob?.cancel()
-        softRouteRescanJob = null
-        routeProbeJob?.cancel()
-        routeProbeJob = null
+    private fun startRoutePreflight() {
         if (_currentPlaybackEpgProgramme != null || _currentChannel.routes.size <= 1) return
-        if (_playbackTransportPreferenceId != AulamaPlaybackPolicy.DEFAULT_PREFERENCE_ID) return
+        if (_playbackTransportPreferenceId !in setOf("direct", "auto") ||
+            routeSelection.relayPassStarted
+        ) return
         if (_currentChannel.routes.all { ChannelUtil.isHybridWebViewUrl(it.url) }) return
+        if (softRouteRescanJob?.isActive == true) return
+        if (routeProbeJob?.isActive == true) return
+        if (routeProbeCompletedAt > 0L &&
+            System.currentTimeMillis() - routeProbeCompletedAt < 20_000L
+        ) return
 
         val expectedGeneration = recoveryGeneration
         val expectedPass = routeAttemptPass
         val expectedChannel = _currentChannel
+        val expectedScope = currentIptvNetworkScope(context)
         routeProbeJob = coroutineScope.launch {
-            val results = IptvRouteProbe.probeAll(expectedChannel.routes)
-            if (
-                expectedGeneration != recoveryGeneration ||
+            delay(1_000L)
+            if (expectedGeneration != recoveryGeneration ||
+                !videoPlayerState.isPlaybackForeground
+            ) return@launch
+            val results = IptvRouteProbe.probeAll(
+                expectedChannel.routes,
+                excludedUrls = setOfNotNull(currentRouteOrNull()?.url),
+            )
+            if (expectedGeneration != recoveryGeneration ||
                 expectedPass != routeAttemptPass ||
                 expectedChannel != _currentChannel ||
+                expectedScope != currentIptvNetworkScope(context) ||
                 !videoPlayerState.isPlaybackForeground
-            ) {
-                return@launch
-            }
+            ) return@launch
 
+            routeProbeCompletedAt = System.currentTimeMillis()
             routeProbeResults = results
             routeAttemptOrder = reorderUnattemptedRoutesByProbe(
                 routes = _currentChannel.routes,
@@ -722,31 +754,8 @@ class MainContentState(
                 results = results,
                 learnedScores = routeLearnedScores(),
                 supports4k = supportsHdrOutput,
+                priorityUrls = IptvRoutePriorityStore.priorities(_currentChannel.name),
             )
-
-            if (!allowEarlyUnavailableSwitch || routeSuccessRecorded) return@launch
-            val currentIndex = _currentChannelUrlIdx
-            if (routeAttemptOrder.getOrNull(routeAttemptCursor) != currentIndex) return@launch
-            val currentProbe = results.firstOrNull { it.routeIndex == currentIndex }
-            if (currentProbe?.status != IptvRouteProbeStatus.UNAVAILABLE) return@launch
-            val targetPosition = (routeAttemptCursor + 1 until routeAttemptOrder.size)
-                .firstOrNull { position ->
-                    val index = routeAttemptOrder[position]
-                    results.any {
-                        it.routeIndex == index && it.status == IptvRouteProbeStatus.AVAILABLE
-                    }
-                }
-                ?: return@launch
-
-            val targetIndex = routeAttemptOrder[targetPosition]
-            val prefix = routeAttemptOrder.take(routeAttemptCursor + 1)
-            val tail = routeAttemptOrder.drop(routeAttemptCursor + 1)
-            routeAttemptOrder = prefix + targetIndex + tail.filterNot { it == targetIndex }
-            finishCurrentWatchSession()
-            routeAttemptCursor += 1
-            _currentChannelUrlIdx = targetIndex
-            Snackbar.show("首選線路暫時失效，已快速切換可用後備")
-            prepareCurrentRoute(retrying = true)
         }
     }
 
@@ -791,6 +800,7 @@ class MainContentState(
                 results = freshResults,
                 learnedScores = routeLearnedScores(),
                 supports4k = supportsHdrOutput,
+                priorityUrls = IptvRoutePriorityStore.priorities(_currentChannel.name),
             )
             val firstIndex = revisitOrder.firstOrNull() ?: return@launch
             val finalWaitMs = routeRevisitDelayMs(
@@ -837,6 +847,7 @@ class MainContentState(
      */
     private fun scheduleSoftRouteRescan(expectedHealthKey: String): Boolean {
         if (!canStartRouteRevisit(routeAttemptPass, _currentChannel.routes.size)) return false
+        if (!routeSelection.allowsSoftSwitch(_currentChannelUrlIdx)) return false
         if (_currentPlaybackEpgProgramme != null) return false
         if (_playbackTransportPreferenceId != AulamaPlaybackPolicy.DEFAULT_PREFERENCE_ID) return false
         if (_currentChannel.routes.all { ChannelUtil.isHybridWebViewUrl(it.url) }) return false
@@ -849,12 +860,16 @@ class MainContentState(
         routeProbeJob?.cancel()
         routeProbeJob = null
         softRouteRescanJob = coroutineScope.launch {
-            val freshResults = IptvRouteProbe.probeAll(expectedChannel.routes)
+            val freshResults = IptvRouteProbe.probeAll(
+                expectedChannel.routes,
+                excludedUrls = setOfNotNull(currentRouteOrNull()?.url),
+            )
             if (
                 expectedGeneration != recoveryGeneration ||
                 expectedChannel != _currentChannel ||
                 expectedRouteIndex != _currentChannelUrlIdx ||
                 currentPlaybackHealthKey() != expectedHealthKey ||
+                !routeSelection.allowsSoftSwitch(_currentChannelUrlIdx) ||
                 !videoPlayerState.isPlaybackForeground
             ) {
                 return@launch
@@ -880,6 +895,7 @@ class MainContentState(
                 expectedChannel != _currentChannel ||
                 expectedRouteIndex != _currentChannelUrlIdx ||
                 currentPlaybackHealthKey() != expectedHealthKey ||
+                !routeSelection.allowsSoftSwitch(_currentChannelUrlIdx) ||
                 !videoPlayerState.isPlaybackForeground
             ) {
                 return@launch
@@ -892,6 +908,7 @@ class MainContentState(
                 results = freshResults,
                 learnedScores = learnedScores,
                 supports4k = supportsHdrOutput,
+                priorityUrls = IptvRoutePriorityStore.priorities(_currentChannel.name),
             )
             routeAttemptOrder = listOf(targetIndex) + revisitOrder.filterNot { it == targetIndex }
             routeAttemptCursor = 0
@@ -904,12 +921,20 @@ class MainContentState(
         return true
     }
 
+    private fun selectionTransportIds(): List<String> =
+        if (_playbackTransportPreferenceId == "auto" && !routeSelection.relayPassStarted) {
+            listOf("direct")
+        } else {
+            AulamaPlaybackPolicy.allowedTransportIds(
+                _playbackTransportPreferenceId,
+                AulamaAccount.manager.isSuperAdmin(),
+            ).filter { _playbackTransportPreferenceId != "auto" ||
+                !routeSelection.relayPassStarted || it != "direct" }
+        }
+
     private fun routeLearnedScores(now: Long = System.currentTimeMillis()): Map<Int, Double> {
         val scope = currentIptvNetworkScope(context)
-        val transportIds = AulamaPlaybackPolicy.allowedTransportIds(
-            preferenceId = _playbackTransportPreferenceId,
-            isSuperAdmin = AulamaAccount.manager.isSuperAdmin(),
-        )
+        val transportIds = selectionTransportIds()
         return _currentChannel.routes.mapIndexed { index, route ->
             val score = transportIds.maxOfOrNull { transportId ->
                 IptvRouteHealthStore.performanceScore(
@@ -934,12 +959,13 @@ class MainContentState(
 
     private fun retryPlaybackSession() {
         resetPlaybackRecoveryBudget()
+        routeSelection.beginSession(requestedIndex = null)
         finishCurrentWatchSession()
         routeAttemptOrder = buildRouteAttemptOrder(_currentChannel, requestedIndex = null)
         routeAttemptCursor = 0
         _currentChannelUrlIdx = routeAttemptOrder.firstOrNull() ?: return
         prepareCurrentRoute(retrying = true)
-        startRoutePreflight(allowEarlyUnavailableSwitch = true)
+        startRoutePreflight()
     }
 
     private fun buildRouteAttemptOrder(
@@ -951,10 +977,7 @@ class MainContentState(
         val ranked = IptvRouteHealthStore.rankedIndices(
             routes = channel.routes,
             supports4k = supportsHdrOutput,
-            transportIds = AulamaPlaybackPolicy.allowedTransportIds(
-                preferenceId = _playbackTransportPreferenceId,
-                isSuperAdmin = AulamaAccount.manager.isSuperAdmin(),
-            ),
+            transportIds = selectionTransportIds(),
             networkScope = currentIptvNetworkScope(context),
         )
         val automaticOrder = orderRoutesForDisplay(
@@ -1007,6 +1030,12 @@ class MainContentState(
 
     private fun prepareCurrentRoute(retrying: Boolean = false) {
         val baseRoute = currentRouteOrNull() ?: return
+        routeProbeJob?.cancel()
+        routeProbeJob = null
+        IptvRouteProbe.cancelForUrl(baseRoute.url)
+        transportResolutionJob?.cancel()
+        transportResolutionJob = null
+        val generation = ++transportResolutionGeneration
         routeLastAttemptAt[_currentChannelUrlIdx] = System.currentTimeMillis()
         stableWatchLearningJob?.cancel()
         stableWatchLearningJob = null
@@ -1037,9 +1066,9 @@ class MainContentState(
             return
         }
 
-        val generation = ++transportResolutionGeneration
         if (!AulamaAccount.manager.isSuperAdmin() ||
-            _playbackTransportPreferenceId == AulamaPlaybackPolicy.DEFAULT_PREFERENCE_ID
+            _playbackTransportPreferenceId == AulamaPlaybackPolicy.DEFAULT_PREFERENCE_ID ||
+            (_playbackTransportPreferenceId == "auto" && !routeSelection.relayPassStarted)
         ) {
             transportAttempts = AulamaPlaybackPolicy.candidates(
                 directRoute.url,
@@ -1051,8 +1080,12 @@ class MainContentState(
             return
         }
 
+        // Invalidate the old player's callbacks while the authorized relay plan is pending.
+        videoPlayerState.stop()
+        transportAttempts = emptyList()
+        transportAttemptCursor = 0
         videoPlayerState.showRetryNotice(if (retrying) "自動切換線路中" else "正在選擇最佳線路")
-        coroutineScope.launch {
+        transportResolutionJob = coroutineScope.launch {
             val resolved = withTimeoutOrNull(RELAY_RESOLUTION_TIMEOUT_MS) {
                 AulamaAccount.manager.playbackCandidates(
                     url = directRoute.url,
@@ -1063,8 +1096,17 @@ class MainContentState(
             if (generation != transportResolutionGeneration || currentRouteOrNull()?.url != baseRoute.url) {
                 return@launch
             }
-            transportAttempts = rankTransportAttempts(baseRoute, resolved)
+            val authorized = if (AulamaAccount.manager.isSuperAdmin()) resolved else
+                AulamaPlaybackPolicy.candidates(directRoute.url, false, emptyList())
+            transportAttempts = rankTransportAttempts(baseRoute, authorized).filter {
+                _playbackTransportPreferenceId != "auto" || !routeSelection.relayPassStarted ||
+                    it.transport == AulamaPlaybackTransport.RELAY
+            }
             transportAttemptCursor = 0
+            if (transportAttempts.isEmpty()) {
+                if (!playNextRoute(forceSwitch = true)) showPlaybackExhausted("relay-unavailable")
+                return@launch
+            }
             prepareTransportAttempt(baseRoute, directRoute, retrying)
         }
     }
@@ -1077,6 +1119,7 @@ class MainContentState(
             candidates = candidates,
             preferenceId = _playbackTransportPreferenceId,
         )
+        if (_playbackTransportPreferenceId != "auto") return prioritized
         val rankedIds = IptvRouteHealthStore.rankedTransportIds(
             routeUrl = baseRoute.url,
             orderedTransportIds = prioritized.map { it.id },
@@ -1139,6 +1182,7 @@ class MainContentState(
     }
 
     private fun playNextRoute(forceSwitch: Boolean = false): Boolean {
+        if (!forceSwitch && !routeSelection.allowsSoftSwitch(_currentChannelUrlIdx)) return false
         if (transportAttemptCursor + 1 < transportAttempts.size) {
             val baseRoute = currentRouteOrNull() ?: return false
             transportAttemptCursor += 1
@@ -1147,7 +1191,7 @@ class MainContentState(
             return true
         }
         if (routeAttemptCursor + 1 >= routeAttemptOrder.size) {
-            return forceSwitch && scheduleRouteRevisit()
+            return finishRoutePass(forceSwitch)
         }
         val currentRoute = currentRouteOrNull() ?: return false
         val viableRouteIndices = remainingProbeViableRoutes(
@@ -1155,9 +1199,7 @@ class MainContentState(
             currentCursor = routeAttemptCursor,
             results = routeProbeResults,
         )
-        if (viableRouteIndices.isEmpty()) {
-            return forceSwitch && scheduleRouteRevisit()
-        }
+        if (viableRouteIndices.isEmpty()) return finishRoutePass(forceSwitch)
         var targetIndex = viableRouteIndices.first()
         if (!forceSwitch) {
             val now = System.currentTimeMillis()
@@ -1172,10 +1214,7 @@ class MainContentState(
                 currentRoute.quality,
                 supportsHdrOutput,
             )
-            val nextTransportIds = AulamaPlaybackPolicy.allowedTransportIds(
-                preferenceId = _playbackTransportPreferenceId,
-                isSuperAdmin = AulamaAccount.manager.isSuperAdmin(),
-            )
+            val nextTransportIds = selectionTransportIds()
             targetIndex = viableRouteIndices
                 .mapNotNull { routeIndex ->
                     val route = _currentChannel.routes.getOrNull(routeIndex)
@@ -1212,8 +1251,8 @@ class MainContentState(
                     }?.let { Triple(routeIndex, qualityRank, score) }
                 }
                 .maxWithOrNull(
-                    compareBy<Triple<Int, Int, Double>> { it.second }
-                        .thenBy { it.third },
+                    compareBy<Triple<Int, Int, Double>> { it.third }
+                        .thenBy { it.second },
                 )
                 ?.first
                 ?: return false
@@ -1224,6 +1263,22 @@ class MainContentState(
         _currentChannelUrlIdx = routeAttemptOrder[routeAttemptCursor]
         prepareCurrentRoute(retrying = true)
         return true
+    }
+
+    private fun finishRoutePass(forceSwitch: Boolean): Boolean {
+        if (forceSwitch && routeSelection.tryStartRelayPass(
+                _playbackTransportPreferenceId, AulamaAccount.manager.isSuperAdmin(),
+            )
+        ) {
+            // Direct HTTP failures do not establish whether a relay can reach the same source.
+            routeProbeResults = emptyList()
+            routeAttemptOrder = buildRouteAttemptOrder(_currentChannel, routeSelection.manualRouteIndex)
+            routeAttemptCursor = 0
+            _currentChannelUrlIdx = routeAttemptOrder.firstOrNull() ?: return false
+            prepareCurrentRoute(retrying = true)
+            return true
+        }
+        return forceSwitch && scheduleRouteRevisit()
     }
 
     private fun withPlaybackProgramme(baseRoute: ChannelRoute): ChannelRoute {
@@ -1250,9 +1305,19 @@ class MainContentState(
             urlIdx != null &&
             getUrlIdx(channel.urlList, urlIdx) == _currentChannelUrlIdx &&
             playbackEpgProgramme == _currentPlaybackEpgProgramme
-        ) return
+        ) {
+            if (!retrying) {
+                routeSelection.selectManual(_currentChannelUrlIdx)
+                softRouteRescanJob?.cancel()
+                softRouteRescanJob = null
+            }
+            return
+        }
 
-        if (!retrying) resetPlaybackRecoveryBudget()
+        if (!retrying) {
+            resetPlaybackRecoveryBudget()
+            routeSelection.beginSession(urlIdx?.let { getUrlIdx(channel.urlList, it) })
+        }
 
         val isManualRouteChange = !retrying &&
             channel.name == _currentChannel.name &&
@@ -1269,9 +1334,7 @@ class MainContentState(
         _currentChannelUrlIdx = routeAttemptOrder.firstOrNull() ?: return
         notifyHdrRouteDecision(channel, urlIdx)
         prepareCurrentRoute(retrying = retrying)
-        startRoutePreflight(
-            allowEarlyUnavailableSwitch = urlIdx == null && playbackEpgProgramme == null,
-        )
+        startRoutePreflight()
     }
 
     fun changeCurrentChannelToPrev() {
@@ -1306,6 +1369,8 @@ class MainContentState(
         val allowed = setOf(
             "hk_relay",
             "jp_relay",
+            "sg_relay",
+            "auto",
             AulamaPlaybackPolicy.DEFAULT_PREFERENCE_ID,
         )
         _playbackTransportPreferenceId = preferenceId.takeIf { it in allowed }
@@ -1313,8 +1378,9 @@ class MainContentState(
         Snackbar.show(AulamaPlaybackPolicy.preferenceLabel(_playbackTransportPreferenceId))
         finishCurrentWatchSession()
         resetPlaybackRecoveryBudget()
+        routeSelection.beginSession(routeSelection.manualRouteIndex)
         prepareCurrentRoute(retrying = true)
-        startRoutePreflight(allowEarlyUnavailableSwitch = true)
+        startRoutePreflight()
     }
 
     fun favoriteChannelOrNot(channel: Channel) {

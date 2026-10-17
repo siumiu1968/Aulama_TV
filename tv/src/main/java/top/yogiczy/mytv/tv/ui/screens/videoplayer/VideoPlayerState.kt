@@ -112,6 +112,12 @@ internal fun playbackModeFallbackCandidates(
     }
 }
 
+internal fun shouldTryFirstFrameDecoderFallback(
+    quality: ChannelQuality?,
+    videoWidth: Int,
+    videoHeight: Int,
+): Boolean = quality == ChannelQuality.UHD_4K || (videoWidth > 0 && videoHeight > 0)
+
 internal fun shouldTryPlaybackModeFallbackForDegradation(reason: String): Boolean = reason !in setOf(
     "ijk-slow-rendering",
     "ijk-av-sync-drift",
@@ -283,6 +289,9 @@ class VideoPlayerState(
                 IptvPlaybackMode.IJK
             }
         }
+
+    val hasTriedAlternatePlaybackMode: Boolean
+        get() = attemptedPlaybackModes.size > 1
 
     fun prepare(
         route: ChannelRoute,
@@ -567,9 +576,13 @@ class VideoPlayerState(
     private fun reportHealthDegradation(reason: IptvDegradationReason) {
         reportPlaybackDegraded(
             reason = IptvPlaybackHealthPolicy.reasonCode(reason),
-            allowPlaybackModeFallback = reason == IptvDegradationReason.FirstFrameTimeout ||
-                reason == IptvDegradationReason.LongRebuffer ||
-                currentRoute?.quality == ChannelQuality.UHD_4K,
+            allowPlaybackModeFallback = when (reason) {
+                IptvDegradationReason.FirstFrameTimeout -> shouldTryFirstFrameDecoderFallback(
+                    currentRoute?.quality, metadata.videoWidth, metadata.videoHeight,
+                )
+                IptvDegradationReason.LongRebuffer -> true
+                else -> currentRoute?.quality == ChannelQuality.UHD_4K
+            },
         )
     }
 
@@ -713,6 +726,7 @@ class VideoPlayerState(
     }
 
     private fun prepareWithMode(route: ChannelRoute, mode: IptvPlaybackMode) {
+        metadata = VideoPlayer.Metadata()
         requiresSurfaceView = route.quality == ChannelQuality.UHD_4K ||
             mode == IptvPlaybackMode.MEDIA3
         replacePlayerForSession(mode)
