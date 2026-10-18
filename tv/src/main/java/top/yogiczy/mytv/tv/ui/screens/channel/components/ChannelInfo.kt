@@ -41,6 +41,7 @@ import top.yogiczy.mytv.tv.ui.theme.MyTVTheme
 import java.text.DecimalFormat
 import java.text.SimpleDateFormat
 import java.util.Locale
+import java.util.TimeZone
 
 @Composable
 fun ChannelInfo(
@@ -243,7 +244,9 @@ private fun ChannelInfoEpgProgramme(
     programmeProvider: () -> EpgProgramme? = { null },
     showProgress: Boolean = false,
 ) {
-    val timeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
+    val timeFormat = SimpleDateFormat("HH:mm", Locale.TRADITIONAL_CHINESE).apply {
+        timeZone = TimeZone.getTimeZone("Asia/Hong_Kong")
+    }
     val programme = programmeProvider()
 
     if (programme == null) {

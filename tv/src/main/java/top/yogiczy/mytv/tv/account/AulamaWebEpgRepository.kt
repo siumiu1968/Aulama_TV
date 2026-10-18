@@ -15,6 +15,7 @@ import top.yogiczy.mytv.core.data.entities.epg.Epg
 import top.yogiczy.mytv.core.data.entities.epg.EpgList
 import top.yogiczy.mytv.core.data.entities.epg.EpgProgramme
 import top.yogiczy.mytv.core.data.repositories.epg.EpgChannelMatcher
+import top.yogiczy.mytv.core.data.utils.Logger
 import java.time.OffsetDateTime
 
 /** Hong Kong guides share the website's snapshot and live API, without numeric-id guessing. */
@@ -106,10 +107,22 @@ internal class AulamaWebEpgRepository(
 
         fun create(): AulamaWebEpgRepository {
             val api = AulamaAccountApi()
+            val log = Logger.create("AulamaWebEpg")
             return AulamaWebEpgRepository(
                 fetchSnapshot = { api.getWebEpgSnapshot() },
                 fetchChannel = { channel ->
-                    AulamaAccount.manager.withAccessToken { api.getWebEpg(it, channel) }
+                    try {
+                        AulamaAccount.manager.withAccessToken { api.getWebEpg(it, channel) }.also {
+                            log.i("網頁節目單 $channel: ${if (it == null) "未登入" else "已接收"}")
+                        }
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (error: Exception) {
+                        val reason = (error as? AulamaAccountApiException.HttpFailure)?.statusCode?.toString()
+                            ?: error.javaClass.simpleName
+                        log.w("網頁節目單 $channel 請求失敗: $reason")
+                        throw error
+                    }
                 },
             )
         }

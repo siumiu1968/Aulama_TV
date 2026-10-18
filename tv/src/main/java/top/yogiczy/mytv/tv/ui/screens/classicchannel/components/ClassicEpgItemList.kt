@@ -24,6 +24,7 @@ import top.yogiczy.mytv.tv.ui.screens.epg.components.EpgProgrammeItemList
 import top.yogiczy.mytv.tv.ui.theme.colors
 import java.text.SimpleDateFormat
 import java.util.Locale
+import java.util.TimeZone
 
 @Composable
 fun ClassicEpgItemList(
@@ -38,7 +39,9 @@ fun ClassicEpgItemList(
     onUserAction: () -> Unit = {},
 ) {
     val epg = epgProvider() ?: return
-    val dateFormat = SimpleDateFormat("E MM-dd", Locale.getDefault())
+    val dateFormat = SimpleDateFormat("E MM-dd", Locale.TRADITIONAL_CHINESE).apply {
+        timeZone = TimeZone.getTimeZone("Asia/Hong_Kong")
+    }
     val programDayGroup = epg.programmeList.groupBy { dateFormat.format(it.startAt) }
     var currentDay by remember { mutableStateOf(dateFormat.format(System.currentTimeMillis())) }
 
