@@ -17,6 +17,9 @@ internal fun isLikelyHlsStreamUrl(url: String): Boolean {
     val uri = runCatching { URI(url) }.getOrNull() ?: return false
     val scheme = uri.scheme?.lowercase()
     if (scheme != "http" && scheme != "https") return false
+    if (uri.host.equals("aulama.org", ignoreCase = true) &&
+        uri.path == "/hermes-api/iptv/hls"
+    ) return true
     return uri.host?.lowercase() in EXTENSIONLESS_HLS_HOSTS
 }
 

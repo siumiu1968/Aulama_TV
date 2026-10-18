@@ -16,6 +16,13 @@ class IptvStreamUrlPolicyTest {
     }
 
     @Test
+    fun `Aulama relay starts as HLS without a failed progressive decoding attempt`() {
+        assertTrue(isLikelyHlsStreamUrl("https://aulama.org/hermes-api/iptv/hls?relay=jp"))
+        assertFalse(isLikelyHlsStreamUrl("https://example.com/hermes-api/iptv/hls?relay=jp"))
+        assertFalse(isLikelyHlsStreamUrl("https://aulama.org/hermes-api/iptv/proxy"))
+    }
+
+    @Test
     fun `ordinary extensionless pages and transport urls keep inferred handling`() {
         assertFalse(isLikelyHlsStreamUrl("https://example.com/"))
         assertFalse(isLikelyHlsStreamUrl("https://example.com/stream/tvb/channel/"))
