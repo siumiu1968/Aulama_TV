@@ -70,7 +70,7 @@ jobs:
 
       # 5. 编译 Release APK
       - name: Build Release APK
-        run: ./gradlew assembleRelease --info
+        run: ./gradlew :tv:testDebugUnitTest :core:data:testDebugUnitTest assembleRelease --info
 
       # 6. 验证 APK 签名
       - name: Check APK signature

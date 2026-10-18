@@ -139,7 +139,7 @@ internal object AulamaPlaybackPolicy {
     }
 
     fun preferenceLabel(preferenceId: String): String = when (preferenceId) {
-        "auto" -> "自動選線：先直連，必要時使用中轉"
+        "auto" -> "自動選線：優先最近穩播組合，失敗再試直連及其他中轉"
         "hk_relay" -> "優先香港中轉；失敗會嘗試其他地區及直連"
         "jp_relay" -> "優先日本中轉；失敗會嘗試其他地區及直連"
         "sg_relay" -> "優先新加坡中轉；失敗會嘗試其他地區及直連"

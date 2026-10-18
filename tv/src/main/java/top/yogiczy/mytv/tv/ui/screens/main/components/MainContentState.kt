@@ -167,9 +167,13 @@ class MainContentState(
     private var transportAttemptCursor by mutableIntStateOf(0)
     private var transportResolutionGeneration = 0L
     private var _playbackTransportPreferenceId by mutableStateOf(
-        AulamaPlaybackPolicy.DEFAULT_PREFERENCE_ID
+        "auto"
     )
-    val playbackTransportPreferenceId get() = _playbackTransportPreferenceId
+    val playbackTransportPreferenceId get() = if (AulamaAccount.manager.isSuperAdmin()) {
+        _playbackTransportPreferenceId
+    } else {
+        AulamaPlaybackPolicy.DEFAULT_PREFERENCE_ID
+    }
     val actualPlaybackTransportLabel get() = currentPlaybackCandidate()?.label ?: "正在連線"
     private var routeStartedAt = 0L
     /** 每個 attempt 固定網絡 scope；真實換網故障會重新排序而不懲罰舊網絡。 */
@@ -650,6 +654,7 @@ class MainContentState(
                         healthKey,
                         STABLE_WATCH_SAMPLE_MS,
                         playbackMode = videoPlayerState.playbackMode,
+                        continuousHealthyMs = continuousHealthyMs,
                         legacyKey = legacyHealthKey,
                     )
                     routeWatchCreditedMs += STABLE_WATCH_SAMPLE_MS
@@ -676,6 +681,7 @@ class MainContentState(
                     healthKey,
                     uncreditedMs,
                     playbackMode = videoPlayerState.playbackMode,
+                    continuousHealthyMs = videoPlayerState.continuousHealthyPlaybackMs(),
                     legacyKey = legacyHealthKey,
                 )
             }
@@ -715,9 +721,8 @@ class MainContentState(
      */
     private fun startRoutePreflight() {
         if (_currentPlaybackEpgProgramme != null || _currentChannel.routes.size <= 1) return
-        if (_playbackTransportPreferenceId !in setOf("direct", "auto") ||
-            routeSelection.relayPassStarted
-        ) return
+        // A direct probe cannot determine whether an authorized relay can play a source.
+        if (_playbackTransportPreferenceId != AulamaPlaybackPolicy.DEFAULT_PREFERENCE_ID) return
         if (_currentChannel.routes.all { ChannelUtil.isHybridWebViewUrl(it.url) }) return
         if (softRouteRescanJob?.isActive == true) return
         if (routeProbeJob?.isActive == true) return
@@ -921,16 +926,10 @@ class MainContentState(
         return true
     }
 
-    private fun selectionTransportIds(): List<String> =
-        if (_playbackTransportPreferenceId == "auto" && !routeSelection.relayPassStarted) {
-            listOf("direct")
-        } else {
-            AulamaPlaybackPolicy.allowedTransportIds(
-                _playbackTransportPreferenceId,
-                AulamaAccount.manager.isSuperAdmin(),
-            ).filter { _playbackTransportPreferenceId != "auto" ||
-                !routeSelection.relayPassStarted || it != "direct" }
-        }
+    private fun selectionTransportIds(): List<String> = AulamaPlaybackPolicy.allowedTransportIds(
+        playbackTransportPreferenceId,
+        AulamaAccount.manager.isSuperAdmin(),
+    )
 
     private fun routeLearnedScores(now: Long = System.currentTimeMillis()): Map<Int, Double> {
         val scope = currentIptvNetworkScope(context)
@@ -1067,8 +1066,7 @@ class MainContentState(
         }
 
         if (!AulamaAccount.manager.isSuperAdmin() ||
-            _playbackTransportPreferenceId == AulamaPlaybackPolicy.DEFAULT_PREFERENCE_ID ||
-            (_playbackTransportPreferenceId == "auto" && !routeSelection.relayPassStarted)
+            playbackTransportPreferenceId == AulamaPlaybackPolicy.DEFAULT_PREFERENCE_ID
         ) {
             transportAttempts = AulamaPlaybackPolicy.candidates(
                 directRoute.url,
@@ -1098,10 +1096,7 @@ class MainContentState(
             }
             val authorized = if (AulamaAccount.manager.isSuperAdmin()) resolved else
                 AulamaPlaybackPolicy.candidates(directRoute.url, false, emptyList())
-            transportAttempts = rankTransportAttempts(baseRoute, authorized).filter {
-                _playbackTransportPreferenceId != "auto" || !routeSelection.relayPassStarted ||
-                    it.transport == AulamaPlaybackTransport.RELAY
-            }
+            transportAttempts = rankTransportAttempts(baseRoute, authorized)
             transportAttemptCursor = 0
             if (transportAttempts.isEmpty()) {
                 if (!playNextRoute(forceSwitch = true)) showPlaybackExhausted("relay-unavailable")
@@ -1266,18 +1261,6 @@ class MainContentState(
     }
 
     private fun finishRoutePass(forceSwitch: Boolean): Boolean {
-        if (forceSwitch && routeSelection.tryStartRelayPass(
-                _playbackTransportPreferenceId, AulamaAccount.manager.isSuperAdmin(),
-            )
-        ) {
-            // Direct HTTP failures do not establish whether a relay can reach the same source.
-            routeProbeResults = emptyList()
-            routeAttemptOrder = buildRouteAttemptOrder(_currentChannel, routeSelection.manualRouteIndex)
-            routeAttemptCursor = 0
-            _currentChannelUrlIdx = routeAttemptOrder.firstOrNull() ?: return false
-            prepareCurrentRoute(retrying = true)
-            return true
-        }
         return forceSwitch && scheduleRouteRevisit()
     }
 

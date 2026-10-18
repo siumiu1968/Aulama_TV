@@ -1,6 +1,7 @@
 package top.yogiczy.mytv.tv.ui.utils
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -9,6 +10,68 @@ import top.yogiczy.mytv.core.data.entities.channel.ChannelRoute
 
 class IptvRouteHealthStoreTest {
     private val now = 10_000_000L
+
+    @Test
+    fun `recent stable Japan relay is tried before an old direct success`() {
+        val url = "https://example.test/news.m3u8"
+        val health = mapOf(
+            IptvRouteHealthStore.candidateKey(url, "direct") to successfulHealth(20, 500),
+            IptvRouteHealthStore.candidateKey(url, "jp_relay") to successfulHealth(2, 1_500).copy(
+                lastStableAt = now - 1_000L,
+            ),
+        )
+        assertEquals(
+            listOf("jp_relay", "direct", "hk_relay"),
+            IptvRouteHealthStore.rankedTransportIds(
+                url, listOf("direct", "hk_relay", "jp_relay"), health,
+                ChannelQuality.FULL_HD, true, now = now,
+            ),
+        )
+    }
+
+    @Test
+    fun `a new failure removes the recent stable relay advantage`() {
+        val url = "https://example.test/news.m3u8"
+        val health = mapOf(
+            IptvRouteHealthStore.candidateKey(url, "jp_relay") to successfulHealth(2, 800).copy(
+                lastStableAt = now - 5_000L,
+                lastSuccessAt = now - 5_000L,
+                lastFailureAt = now - 1_000L,
+                consecutiveFailures = 1,
+            ),
+        )
+        assertEquals(
+            listOf("direct", "jp_relay"),
+            IptvRouteHealthStore.rankedTransportIds(
+                url, listOf("jp_relay", "direct"), health,
+                ChannelQuality.FULL_HD, true, now = now,
+            ),
+        )
+    }
+
+    @Test
+    fun `old or briefly connected sessions do not count as recent stable playback`() {
+        val clock = 172_800_000L
+        assertFalse(IptvRouteHealthStore.hasRecentStableSuccess(
+            successfulHealth(10, 500).copy(lastStableAt = clock - 86_400_001L), clock,
+        ))
+        assertFalse(IptvRouteHealthStore.hasRecentStableSuccess(
+            successfulHealth(1, 500).copy(lastSuccessAt = clock), clock,
+        ))
+        assertFalse(IptvRouteHealthStore.hasRecentStableSuccess(
+            successfulHealth(3, 500).copy(lastStableAt = clock - 1_000L, bufferRatioEwma = 0.4), clock,
+        ))
+    }
+
+    @Test
+    fun `recent stable source outranks an untried higher resolution source`() {
+        val routes = listOf(
+            route("untried", ChannelQuality.FULL_HD, 0),
+            route("stable", ChannelQuality.HD, 1),
+        )
+        val health = mapOf("stable" to successfulHealth(1, 1_000).copy(lastStableAt = now - 1_000L))
+        assertEquals(listOf(1, 0), IptvRouteHealthStore.rankedIndices(routes, health, now))
+    }
 
     @Test
     fun `recent real buffering outweighs advertised resolution`() {

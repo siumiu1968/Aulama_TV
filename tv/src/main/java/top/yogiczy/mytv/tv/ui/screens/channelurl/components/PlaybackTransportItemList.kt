@@ -43,7 +43,7 @@ private val playbackTransportOptions = listOf(
         "直連",
         "預設直接連接，唔會自動使用中轉",
     ),
-    PlaybackTransportOption("auto", "自動", "先試直連，必要時嘗試香港、日本及新加坡"),
+    PlaybackTransportOption("auto", "自動", "優先最近穩播組合，失敗再試直連及其他中轉"),
     PlaybackTransportOption("hk_relay", "香港", "優先香港，其他地區及直連作後備"),
     PlaybackTransportOption("jp_relay", "日本", "優先日本，其他地區及直連作後備"),
     PlaybackTransportOption("sg_relay", "新加坡", "優先新加坡，其他地區及直連作後備"),

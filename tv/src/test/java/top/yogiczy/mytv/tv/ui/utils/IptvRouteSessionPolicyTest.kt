@@ -32,14 +32,4 @@ class IptvRouteSessionPolicyTest {
         assertTrue(policy.allowsSoftSwitch(2))
     }
 
-    @Test
-    fun relayPassRequiresSuperAdminAutoModeAndMayStartOnlyOnce() {
-        val policy = IptvRouteSessionPolicy()
-        assertFalse(policy.tryStartRelayPass("auto", false))
-        assertFalse(policy.tryStartRelayPass("direct", true))
-        assertTrue(policy.tryStartRelayPass("auto", true))
-        assertFalse(policy.tryStartRelayPass("auto", true))
-        policy.beginSession(null)
-        assertTrue(policy.tryStartRelayPass("auto", true))
-    }
 }

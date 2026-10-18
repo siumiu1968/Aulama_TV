@@ -22,6 +22,7 @@ data class IptvRouteHealth(
     val lastSuccessAt: Long = 0,
     val lastFailureAt: Long = 0,
     val lastWatchAt: Long = 0,
+    val lastStableAt: Long = 0,
     val preferredPlaybackMode: String? = null,
     val successEwma: Double? = null,
     val bufferRatioEwma: Double? = null,
@@ -45,7 +46,7 @@ internal fun preferredPlaybackModeAfterDegradation(
 
 /**
  * 長期分數只根據實際觀看結果學習；短期輕量 probe 由播放頁另外處理，唔會污染呢度。
- * 非冷卻線路先按畫質排序，再以成功率、啟動速度及近期表現選出同畫質最佳線路。
+ * 最近穩播過嘅組合優先，再比較成功率、啟動速度、卡頓及畫質。
  * 近期確實失敗嘅線路會進入冷卻，避免每次換台都重試同一條壞線。
  */
 object IptvRouteHealthStore {
@@ -96,6 +97,14 @@ object IptvRouteHealthStore {
                 .thenBy { index ->
                     !supports4k && routes[index].quality ==
                         top.yogiczy.mytv.core.data.entities.channel.ChannelQuality.UHD_4K
+                }
+                .thenByDescending { index ->
+                    availableTransportIds.any { transportId ->
+                        hasRecentStableSuccess(
+                            candidateHealth(health, routes[index].url, transportId, networkScope),
+                            now,
+                        )
+                    }
                 }
                 .thenByDescending { index ->
                     availableTransportIds.maxOf { transportId ->
@@ -166,6 +175,8 @@ object IptvRouteHealthStore {
             compareBy<String> { transportId ->
                 if (isCoolingDown(candidateHealth(health, routeUrl, transportId, networkScope), now)) 1 else 0
             }.thenByDescending { transportId ->
+                hasRecentStableSuccess(candidateHealth(health, routeUrl, transportId, networkScope), now)
+            }.thenByDescending { transportId ->
                 performanceScore(
                     health = candidateHealth(health, routeUrl, transportId, networkScope),
                     now = now,
@@ -180,6 +191,14 @@ object IptvRouteHealthStore {
         val host = runCatching { URI(url).host }.getOrNull()
         return if (host in autoDeprioritizedHosts) 28.0 else 0.0
     }
+
+    internal fun hasRecentStableSuccess(health: IptvRouteHealth?, now: Long): Boolean =
+        health != null && health.lastStableAt > 0L &&
+            now - health.lastStableAt in 0L..86_400_000L &&
+            health.lastStableAt > health.lastFailureAt &&
+            health.consecutiveFailures == 0 &&
+            (health.bufferRatioEwma ?: 0.0) < 0.15 &&
+            (health.lastBufferIssueAt == 0L || health.stableWatchSinceBufferIssueMs >= 60_000L)
 
     internal fun candidateHealth(
         health: Map<String, IptvRouteHealth>,
@@ -480,6 +499,7 @@ object IptvRouteHealthStore {
         url: String,
         watchedMs: Long,
         playbackMode: IptvPlaybackMode? = null,
+        continuousHealthyMs: Long = 0L,
         legacyKey: String? = null,
         now: Long = System.currentTimeMillis(),
     ) {
@@ -495,6 +515,10 @@ object IptvRouteHealthStore {
             quickExitCount = (previous.quickExitCount - recoveredQuickExits).coerceAtLeast(0),
             lastSuccessAt = maxOf(previous.lastSuccessAt, now),
             lastWatchAt = now,
+            lastStableAt = if (continuousHealthyMs >= 60_000L) now else previous.lastStableAt,
+            fatalErrorCount = if (continuousHealthyMs >= 60_000L) {
+                (previous.fatalErrorCount - 1).coerceAtLeast(0)
+            } else previous.fatalErrorCount,
             preferredPlaybackMode = playbackMode?.name ?: previous.preferredPlaybackMode,
             stableWatchSinceBufferIssueMs = if (recoveredAfterBufferIssue) {
                 (previous.stableWatchSinceBufferIssueMs + sample)
