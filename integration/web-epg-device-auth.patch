@@ -1,0 +1,22 @@
+--- a/hermes_upload_server.py
++++ b/hermes_upload_server.py
+@@ -1,7 +1,13 @@
+ async def api_iptv_epg(request: web.Request) -> web.Response:
+-    session = require_session(request)
+-    if isinstance(session, web.Response):
+-        return session
++    if request.headers.get("Authorization", "").strip():
++        try:
++            _authenticated, session = await _iptv_authenticated_account(request)
++        except iptv_device_auth.IptvDeviceAuthError as exc:
++            return _iptv_error_response(exc)
++    else:
++        session = require_session(request)
++        if isinstance(session, web.Response):
++            return session
+     name = str(request.query.get("channel") or "").strip()[:160]
+     if not name:
+         return json_error("請提供頻道名稱。", 400)
+@@ -13689,1 +13695,2 @@
+     app.router.add_get("/auth/iptv/relay/plan", api_iptv_relay_plan)
++    app.router.add_get("/auth/iptv/epg", api_iptv_epg)

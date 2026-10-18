@@ -25,7 +25,7 @@ class AulamaWebEpgApiTest {
         val live = requests[1]
         assertEquals("https", live.url.scheme)
         assertEquals("aulama.org", live.url.host)
-        assertEquals("/hermes-api/iptv/epg", live.url.encodedPath)
+        assertEquals("/hermes-auth/iptv/epg", live.url.encodedPath)
         assertEquals("無綫新聞台 & test", live.url.queryParameter("channel"))
         assertEquals(1, live.url.querySize)
         assertEquals("Bearer test-access", live.header("Authorization"))

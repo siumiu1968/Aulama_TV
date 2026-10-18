@@ -231,11 +231,11 @@ internal class AulamaAccountApi(
     }
 
     internal suspend fun getWebEpg(accessToken: String, channel: String): String {
-        val url = "$AULAMA_ACCOUNT_ORIGIN/hermes-api/iptv/epg".toHttpUrl().newBuilder()
+        val url = "$AULAMA_ACCOUNT_ORIGIN/hermes-auth/iptv/epg".toHttpUrl().newBuilder()
             .addQueryParameter("channel", channel)
             .build()
         val response = execute(
-            authorizedRequest("/hermes-api/iptv/epg", accessToken).url(url).get().build()
+            authorizedRequest("/hermes-auth/iptv/epg", accessToken).url(url).get().build()
         )
         checkAuthorized(response)
         if (response.statusCode !in 200..299) {

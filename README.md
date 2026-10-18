@@ -9,13 +9,20 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/siumiu1968/Aulama_TV/releases/tag/v2.7.0-family"><img src="https://img.shields.io/github/v/release/siumiu1968/Aulama_TV?display_name=tag&label=Android%20TV&color=2383e2" alt="Android TV release" /></a>
+  <a href="https://github.com/siumiu1968/Aulama_TV/releases/tag/v2.8.0"><img src="https://img.shields.io/github/v/release/siumiu1968/Aulama_TV?display_name=tag&label=Android%20TV&color=2383e2" alt="Android TV release" /></a>
   <a href="https://github.com/siumiu1968/Aulama_TV/releases"><img src="https://img.shields.io/github/downloads/siumiu1968/Aulama_TV/total?label=downloads" alt="Downloads" /></a>
   <a href="https://apilevels.com/"><img src="https://img.shields.io/badge/Android-5.0%2B-3ddc84?logo=android" alt="Android 5.0+" /></a>
   <a href="./LICENSE"><img src="https://img.shields.io/github/license/siumiu1968/Aulama_TV" alt="MIT License" /></a>
 </p>
 
-> 目前正式版本：Android TV `2.7.0-family`、Android 手機 `1.1.3`；Android TV 最新測試版為 `2.6.20-beta.5`。
+> 目前正式版本：Android TV `2.8.0`、Android 手機 `1.1.3`；Android TV 最新測試版為 `2.7.1-beta.6`。
+
+## 2.8.0 更新重點
+
+- **香港節目單跟網頁版同步**：沿用網頁版公開資料及已登入 EPG API，過期時切換來源；頻道列表、快速選單及節目指南同步顯示當前與下一節節目。
+- **自動選線沿用近期經驗**：優先重用本機近期穩播線路及解碼方式；最高管理員可自動嘗試獲授權嘅中轉，手動選線唔會再被舊排名搶返。
+- **修復黑畫面及重複載入**：避免清屏操作佔用影片輸出面，保留自動解碼及線路回退。
+- **節目資訊統一香港時間**：自動更新節目單，短撳及長撳 OK 嘅資訊欄使用同一份資料。
 
 ## 2.7.0 更新重點
 
@@ -115,10 +122,10 @@
 
 | 平台 | 版本 | 下載 |
 | --- | --- | --- |
-| Android TV／Google TV 測試版 | `2.6.20-beta.5` | [下載 Beta APK](https://github.com/siumiu1968/Aulama_TV/releases/download/v2.6.20-beta.5/mytv-android-tv-2.6.20-beta.5-all-sdk21.apk) |
-| Android TV／Google TV（通用版） | `2.7.0-family` | [下載 Universal APK](https://github.com/siumiu1968/Aulama_TV/releases/download/v2.7.0-family/mytv-android-tv-2.7.0-family-all-sdk21.apk) |
-| Android TV／Google TV（64 位元） | `2.7.0-family` | [下載 arm64-v8a APK](https://github.com/siumiu1968/Aulama_TV/releases/download/v2.7.0-family/mytv-android-tv-2.7.0-family-arm64-v8a-sdk21.apk) |
-| Android TV／Google TV（32 位元） | `2.7.0-family` | [下載 armeabi-v7a APK](https://github.com/siumiu1968/Aulama_TV/releases/download/v2.7.0-family/mytv-android-tv-2.7.0-family-armeabi-v7a-sdk21.apk) |
+| Android TV／Google TV 測試版 | `2.7.1-beta.6` | [下載 Beta APK](https://github.com/siumiu1968/Aulama_TV/releases/download/v2.7.1-beta.6/mytv-android-tv-2.7.1-beta.6-all-sdk21.apk) |
+| Android TV／Google TV（通用版） | `2.8.0` | [下載 Universal APK](https://github.com/siumiu1968/Aulama_TV/releases/download/v2.8.0/mytv-android-tv-2.8.0-all-sdk21.apk) |
+| Android TV／Google TV（64 位元） | `2.8.0` | [下載 arm64-v8a APK](https://github.com/siumiu1968/Aulama_TV/releases/download/v2.8.0/mytv-android-tv-2.8.0-arm64-v8a-sdk21.apk) |
+| Android TV／Google TV（32 位元） | `2.8.0` | [下載 armeabi-v7a APK](https://github.com/siumiu1968/Aulama_TV/releases/download/v2.8.0/mytv-android-tv-2.8.0-armeabi-v7a-sdk21.apk) |
 | Android 手機 | `1.1.3` | [下載 APK](https://github.com/siumiu1968/Aulama_TV/releases/tag/android-v1.1.3) |
 | 網頁版 | 最新版 | [開啟 Aulama IPTV](https://aulama.org/iptv/) |
 
