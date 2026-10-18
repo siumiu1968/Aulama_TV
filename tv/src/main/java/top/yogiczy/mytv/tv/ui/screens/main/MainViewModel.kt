@@ -2,7 +2,9 @@ package top.yogiczy.mytv.tv.ui.screens.main
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
@@ -13,7 +15,6 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.retry
 import kotlinx.coroutines.flow.retryWhen
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
@@ -29,20 +30,26 @@ import top.yogiczy.mytv.core.data.repositories.epg.EpgRepository
 import top.yogiczy.mytv.core.data.repositories.iptv.IptvRepository
 import top.yogiczy.mytv.core.data.utils.ChannelUtil
 import top.yogiczy.mytv.core.data.utils.Constants
+import top.yogiczy.mytv.tv.account.AulamaWebEpgRepository
 import top.yogiczy.mytv.tv.ui.material.Snackbar
 import top.yogiczy.mytv.tv.ui.material.SnackbarType
 import top.yogiczy.mytv.tv.ui.utils.Configs
-import java.time.LocalDate
-import java.time.format.DateTimeFormatter
 class MainViewModel : ViewModel() {
     private val _uiState = MutableStateFlow<MainUiState>(MainUiState.Loading())
     val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
 
-    // Add property to store last EPG update date
-    private var lastEpgUpdateDate: LocalDate? = null
+    private val webEpg = AulamaWebEpgRepository.create()
+    private var lastEpgAttemptAt = 0L
+    private var epgRefreshing = false
 
     init {
         init()
+        viewModelScope.launch {
+            while (isActive) {
+                delay(AulamaWebEpgRepository.CHANNEL_TTL_MS)
+                refreshEpg()
+            }
+        }
     }
 
     fun init() {
@@ -54,12 +61,9 @@ class MainViewModel : ViewModel() {
         }
     }
 
-    // Add method to handle app resume
     fun onAppResume() {
         viewModelScope.launch {
-            val currentDate = LocalDate.now()
-            if (lastEpgUpdateDate != null && lastEpgUpdateDate != currentDate) {
-                // Date changed, refresh EPG
+            if (System.currentTimeMillis() - lastEpgAttemptAt >= AulamaWebEpgRepository.CHANNEL_TTL_MS) {
                 refreshEpg()
             }
         }
@@ -163,27 +167,28 @@ class MainViewModel : ViewModel() {
         }
 
     private suspend fun refreshEpg() {
-        if (!Configs.epgEnable) return
-
-        if (_uiState.value is MainUiState.Ready) {
-            EpgList.clearCache()
-            val channelGroupList = (_uiState.value as MainUiState.Ready).channelGroupList
-
-            flow {
-                emit(loadEpgList(channelGroupList))
-            }
-                .retry(Constants.HTTP_RETRY_COUNT) { delay(Constants.HTTP_RETRY_INTERVAL); true }
-                .catch {
-                    emit(EpgList())
-                    Snackbar.show("節目單獲取失敗，請檢查網絡連接", type = SnackbarType.ERROR)
-                }
-                .map { epgList ->
-                    // Record current date when EPG is successfully updated
-                    lastEpgUpdateDate = LocalDate.now()
-                    _uiState.value = (_uiState.value as MainUiState.Ready).copy(epgList = epgList)
-                }
-                .collect()
+        if (!Configs.epgEnable || epgRefreshing) return
+        val ready = _uiState.value as? MainUiState.Ready ?: return
+        epgRefreshing = true
+        lastEpgAttemptAt = System.currentTimeMillis()
+        try {
+            val epgList = loadEpgList(ready.channelGroupList)
+            publishEpg(ready.channelGroupList, epgList)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            // Keep usable programme data on transient failures; allow a retry on the same day.
+            Snackbar.show("節目單獲取失敗，稍後會重試", type = SnackbarType.ERROR)
+        } finally {
+            epgRefreshing = false
         }
+    }
+
+    private fun publishEpg(groups: ChannelGroupList, epgList: EpgList) {
+        val ready = _uiState.value as? MainUiState.Ready ?: return
+        if (ready.channelGroupList !== groups || epgList.isEmpty()) return
+        EpgList.clearCache()
+        _uiState.value = ready.copy(epgList = EpgList.merge(epgList, ready.epgList))
     }
 
     private suspend fun loadEpgList(channelGroupList: ChannelGroupList): EpgList {
@@ -211,15 +216,19 @@ class MainViewModel : ViewModel() {
             }
         }
 
-        val results = supervisorScope {
-            requests.map { (source, channels) ->
+        return supervisorScope {
+            val web = async {
+                webEpg.getEpgList(channelGroupList.channelList) { publishEpg(channelGroupList, it) }
+            }
+            val results = requests.map { (source, channels) ->
                 async {
                     runCatching {
                         EpgRepository(source).getEpgList(
                             filteredChannels = channels,
                             refreshTimeThreshold = Configs.epgRefreshTimeThreshold,
                         )
-                    }.recoverCatching {
+                    }.recoverCatching { error ->
+                        if (error is CancellationException) throw error
                         val fallback = if (source.url == Constants.EPG_SOURCE_TRADITIONAL.url) {
                             Constants.EPG_SOURCE_SIMPLIFIED
                         } else {
@@ -232,13 +241,17 @@ class MainViewModel : ViewModel() {
                     }
                 }
             }.awaitAll()
+            val now = System.currentTimeMillis()
+            val available = listOf(web.await()) + results.mapNotNull { it.getOrNull() }.map { list ->
+                list.copy(value = list.filter { guide -> guide.programmeList.any { it.endAt > now } })
+            }
+            if (available.all { it.isEmpty() }) {
+                throw results.firstNotNullOfOrNull { it.exceptionOrNull() }
+                    ?: IllegalStateException("節目單暫無最新內容")
+            }
+            // Fresh website data wins over stale XML for the same channel.
+            EpgList.merge(*available.toTypedArray())
         }
-        val available = results.mapNotNull { it.getOrNull() }.filter { it.isNotEmpty() }
-        if (available.isEmpty()) {
-            throw results.firstNotNullOfOrNull { it.exceptionOrNull() }
-                ?: IllegalStateException("節目單內容為空")
-        }
-        return EpgList.merge(*available.toTypedArray())
     }
 }
 

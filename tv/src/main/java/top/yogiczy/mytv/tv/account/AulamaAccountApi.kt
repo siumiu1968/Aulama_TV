@@ -218,6 +218,32 @@ internal class AulamaAccountApi(
         throw AulamaAccountApiException.HttpFailure(response.statusCode)
     }
 
+    /** The same public snapshot and authenticated fallback used by /iptv/. */
+    internal suspend fun getWebEpgSnapshot(): String {
+        val response = execute(
+            Request.Builder().url("$AULAMA_ACCOUNT_ORIGIN/iptv/data/epg.json").get().build(),
+            maxResponseBytes = 2 * 1024 * 1024L,
+        )
+        if (response.statusCode !in 200..299) {
+            throw AulamaAccountApiException.HttpFailure(response.statusCode)
+        }
+        return response.body
+    }
+
+    internal suspend fun getWebEpg(accessToken: String, channel: String): String {
+        val url = "$AULAMA_ACCOUNT_ORIGIN/hermes-api/iptv/epg".toHttpUrl().newBuilder()
+            .addQueryParameter("channel", channel)
+            .build()
+        val response = execute(
+            authorizedRequest("/hermes-api/iptv/epg", accessToken).url(url).get().build()
+        )
+        checkAuthorized(response)
+        if (response.statusCode !in 200..299) {
+            throw AulamaAccountApiException.HttpFailure(response.statusCode)
+        }
+        return response.body
+    }
+
     private suspend fun post(path: String, payload: JsonObject): HttpResponse {
         val request = Request.Builder()
             .url("$AULAMA_ACCOUNT_ORIGIN$path")
@@ -244,7 +270,10 @@ internal class AulamaAccountApi(
         }
     }
 
-    private suspend fun execute(request: Request): HttpResponse =
+    private suspend fun execute(
+        request: Request,
+        maxResponseBytes: Long = MAX_RESPONSE_BYTES,
+    ): HttpResponse =
         suspendCancellableCoroutine { continuation ->
             val call = client.newCall(request)
             continuation.invokeOnCancellation { call.cancel() }
@@ -257,11 +286,11 @@ internal class AulamaAccountApi(
                     val result = runCatching {
                         response.use {
                             val contentLength = it.body?.contentLength() ?: 0L
-                            if (contentLength > MAX_RESPONSE_BYTES) {
+                            if (contentLength > maxResponseBytes) {
                                 throw AulamaAccountApiException.ProtocolFailure()
                             }
                             val body = it.body?.string().orEmpty()
-                            if (body.toByteArray(Charsets.UTF_8).size > MAX_RESPONSE_BYTES) {
+                            if (body.toByteArray(Charsets.UTF_8).size > maxResponseBytes) {
                                 throw AulamaAccountApiException.ProtocolFailure()
                             }
                             HttpResponse(
