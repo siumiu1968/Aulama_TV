@@ -1,8 +1,6 @@
 package top.yogiczy.mytv.tv.ui.screens.videoplayer.player
 
 import android.content.Context
-import android.graphics.Color as AndroidColor
-import android.graphics.PorterDuff
 import android.hardware.display.DisplayManager
 import android.media.MediaFormat
 import android.os.Build
@@ -294,8 +292,9 @@ class Media3VideoPlayer(
 
         if (mediaSource != null) {
             contentTypeAttempts[resolvedContentType] = true
+            // VideoPlayerScreen's overlay hides stale frames. Never lockCanvas() this
+            // decoder surface: its CPU producer stays connected and blocks MediaCodec.
             videoPlayer.clearVideoSurface()
-            clearVideoOutput()
             videoPlayer.stop()
             videoPlayer.clearMediaItems()
             videoPlayer.setMediaSource(mediaSource)
@@ -623,26 +622,6 @@ class Media3VideoPlayer(
         currentTextureView = textureView
         currentSurfaceView = null
         videoPlayer.setVideoTextureView(textureView)
-    }
-
-    private fun clearVideoOutput() {
-        currentSurfaceView?.holder?.surface?.takeIf { it.isValid }?.let { surface ->
-            val canvas = runCatching { surface.lockCanvas(null) }.getOrNull() ?: return@let
-            try {
-                canvas.drawColor(AndroidColor.BLACK, PorterDuff.Mode.SRC)
-            } finally {
-                runCatching { surface.unlockCanvasAndPost(canvas) }
-            }
-        }
-
-        currentTextureView?.takeIf(TextureView::isAvailable)?.let { textureView ->
-            val canvas = runCatching { textureView.lockCanvas() }.getOrNull() ?: return@let
-            try {
-                canvas.drawColor(AndroidColor.BLACK, PorterDuff.Mode.SRC)
-            } finally {
-                runCatching { textureView.unlockCanvasAndPost(canvas) }
-            }
-        }
     }
 
     companion object {
