@@ -35,17 +35,25 @@ jobs:
           [[ "$TAG" == android-v* ]] || { echo "Invalid Android tag: $TAG"; exit 1; }
           echo "TAG=$TAG" >> "$GITHUB_ENV"
           echo "MOBILE_VERSION=${TAG#android-v}" >> "$GITHUB_ENV"
+          SOURCE_VERSION=$(sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' mobile/build.gradle.kts | head -n 1)
+          if [[ "$SOURCE_VERSION" != "${TAG#android-v}" ]]; then
+            echo "SKIP_MOBILE_SOURCE_BUILD=true" >> "$GITHUB_ENV"
+            echo "This tag uses a separately built release candidate; skipping the older public source."
+          fi
 
       - name: Set up JDK
+        if: env.SKIP_MOBILE_SOURCE_BUILD != 'true'
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '21'
 
       - name: Set up Gradle
+        if: env.SKIP_MOBILE_SOURCE_BUILD != 'true'
         uses: gradle/actions/setup-gradle@v4
 
       - name: Decode signing key
+        if: env.SKIP_MOBILE_SOURCE_BUILD != 'true'
         shell: bash
         run: |
           echo "${{ secrets.SIGNING_KEYSTORE_B64 }}" | base64 --decode > release.keystore
@@ -55,9 +63,11 @@ jobs:
           echo "RELEASE_KEY_PASSWORD=${{ secrets.SIGNING_KEY_PWD }}" >> "$GITHUB_ENV"
 
       - name: Build signed Android APK
+        if: env.SKIP_MOBILE_SOURCE_BUILD != 'true'
         run: ./gradlew :mobile:assembleRelease --console=plain
 
       - name: Locate and verify APK
+        if: env.SKIP_MOBILE_SOURCE_BUILD != 'true'
         id: apk
         shell: bash
         run: |
@@ -68,6 +78,7 @@ jobs:
           echo "apk_path=$APK" >> "$GITHUB_OUTPUT"
 
       - name: Publish Android release
+        if: env.SKIP_MOBILE_SOURCE_BUILD != 'true'
         uses: softprops/action-gh-release@v2
         with:
           files: ${{ steps.apk.outputs.apk_path }}
